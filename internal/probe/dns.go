@@ -113,8 +113,9 @@ type ResolverResult struct {
 // ProbeDoH POSTs an A query for domain to dohURL through d. A resolver is up
 // only when it answers with 200, an application/dns-message body, a message
 // that unpacks, and our own message ID: an error page or a cached reply from
-// another query is not a resolver.
-func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time.Duration) ResolverResult {
+// another query is not a resolver. roots overrides the system roots when
+// non-nil.
+func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time.Duration, roots *x509.CertPool) ResolverResult {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -124,7 +125,7 @@ func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time
 		return ResolverResult{Err: fmt.Errorf("doh query pack: %w", err)}
 	}
 
-	client := HTTPClient(d, timeout, nil)
+	client := HTTPClient(d, timeout, roots)
 	defer client.CloseIdleConnections()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dohURL, bytes.NewReader(packed))

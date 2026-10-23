@@ -36,22 +36,21 @@ type HTTPResult struct {
 }
 
 // HTTPClient returns the HTTP client the package shares: connections go
-// through d, keep-alives are off, redirects come back as responses, and
-// certificates are verified against roots (nil means the system pool).
-// Verification runs in VerifyConnection so a caller can replace that callback
-// and turn a certificate error into a verdict; ProbeHTTPS does exactly that.
+// through d, keep-alives are off, redirects come back as responses, and the
+// leaf is verified against the host of the requested URL, whether that is a
+// DNS name or an address literal (VerifyHostname matches IP SANs). roots
+// overrides the system roots when non-nil.
+//
+// The transport derives that name from the URL it is dialing, so verification
+// does not depend on the connection state: Go sends no SNI for an address
+// literal, and the state carries no other copy of the name. ProbeHTTPS
+// replaces the callback to keep the handshake and record a verdict instead of
+// failing the request.
 func HTTPClient(d Dialer, timeout time.Duration, roots *x509.CertPool) *http.Client {
 	transport := &http.Transport{
 		DialContext:       d.DialContext,
 		DisableKeepAlives: true,
-		TLSClientConfig: &tls.Config{
-			// Verification runs by hand so it can be recorded or handed to a
-			// caller; verifyPeer checks both the chain and the peer name.
-			InsecureSkipVerify: true,
-			VerifyConnection: func(state tls.ConnectionState) error {
-				return verifyPeer(state, roots, state.ServerName)
-			},
-		},
+		TLSClientConfig:   &tls.Config{RootCAs: roots},
 	}
 
 	return &http.Client{
@@ -88,10 +87,13 @@ func ProbeHTTPS(ctx context.Context, d Dialer, host string, timeout time.Duratio
 	defer client.CloseIdleConnections()
 
 	// A probe needs the certificate error as a verdict, not as a failed
-	// request: record it and let the handshake continue.
+	// request: skip the standard verification, record our own, and let the
+	// handshake continue. The name comes from the request URL, not from the
+	// connection state, which has no SNI name for an address literal.
+	transport.TLSClientConfig.InsecureSkipVerify = true
 	transport.TLSClientConfig.VerifyConnection = func(state tls.ConnectionState) error {
 		tlsChecked = true
-		verifyErr = verifyPeer(state, roots, probeName(state, target.Hostname()))
+		verifyErr = verifyPeer(state, roots, target.Hostname())
 		return nil
 	}
 
@@ -146,16 +148,6 @@ func probeURL(host string) (*url.URL, error) {
 	}
 
 	return target, nil
-}
-
-// probeName is the name the certificate is verified against: the SNI name when
-// one went out, otherwise the probed host, which Go omits from SNI when it is
-// an address literal.
-func probeName(state tls.ConnectionState, host string) string {
-	if state.ServerName != "" {
-		return state.ServerName
-	}
-	return host
 }
 
 // verifyPeer checks the peer chain against roots and then the leaf against
