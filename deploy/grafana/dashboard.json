@@ -83,7 +83,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance) (xray_config_running{instance=~\"$instance\"})",
+          "expr": "sum by (instance) (xray_config_running{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "A",
           "legendFormat": "{{instance}}",
           "instant": true,

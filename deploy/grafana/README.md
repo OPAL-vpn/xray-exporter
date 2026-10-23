@@ -59,6 +59,8 @@ panels render empty rather than zero: `spanNulls` is off and every panel has a
 `noValue` placeholder. Nothing in the dashboard requires a built-in target or
 resolver list.
 
-`internal/metrics/dashboard_test.go` parses this file, reads every `expr`, and
-fails if it names a metric the exporter does not register — rename a metric in
-`internal/metrics` and the drift test tells you which panel to fix.
+`internal/metrics/dashboard_test.go` parses this file, reads every `expr` and
+every variable `query`/`definition`, and fails if it names a metric the exporter
+does not register — rename a metric in `internal/metrics` and the drift test
+tells you which panel to fix. It also fails if a panel expression ignores
+`$instance`, so a panel cannot silently stay unscoped.
