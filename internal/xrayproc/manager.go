@@ -1,0 +1,125 @@
+package xrayproc
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"sync"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
+)
+
+// managed pairs a running instance with the raw bytes it was started from, so
+// Apply can tell an unchanged config from an edited one.
+type managed struct {
+	inst *Instance
+	raw  []byte
+}
+
+// Manager owns the process's xray instances and reconciles them against the
+// configs found on disk. It serializes Apply, so a reload and a scrape-driven
+// Instances read never race.
+type Manager struct {
+	mu       sync.Mutex
+	up       xraycfg.Upstream
+	logLevel string
+	logger   *slog.Logger
+	running  map[string]managed
+}
+
+// NewManager returns a manager that starts every instance against up and
+// logLevel and routes xray's log stream to logger.
+func NewManager(up xraycfg.Upstream, logLevel string, logger *slog.Logger) *Manager {
+	return &Manager{
+		up:       up,
+		logLevel: logLevel,
+		logger:   logger,
+		running:  make(map[string]managed),
+	}
+}
+
+// Apply reconciles the running instances with cfgs: configs that disappeared or
+// whose raw bytes changed are stopped, missing ones are started, and unchanged
+// ones keep their instance and ports. A config that fails to start is reported
+// in errs and does not abort the rest of the batch. started and stopped are
+// sorted by config name. An unparseable logLevel is reported in errs too and
+// leaves the previously installed handler in place.
+//
+// Apply installs the log handler after the last start, because every instance
+// start replaces it.
+func (m *Manager) Apply(cfgs []xraycfg.Config) (started, stopped []string, errs []error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	wanted := make(map[string]xraycfg.Config, len(cfgs))
+	for _, cfg := range cfgs {
+		wanted[cfg.Name] = cfg
+	}
+
+	for name, current := range m.running {
+		next, keeping := wanted[name]
+		if keeping && bytes.Equal(current.raw, next.Raw) {
+			continue
+		}
+		if err := current.inst.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		}
+		delete(m.running, name)
+		stopped = append(stopped, name)
+	}
+
+	for _, cfg := range cfgs {
+		if _, running := m.running[cfg.Name]; running {
+			continue
+		}
+		inst, err := Start(cfg, m.up, m.logLevel, m.logger)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		m.running[cfg.Name] = managed{inst: inst, raw: cfg.Raw}
+		started = append(started, cfg.Name)
+	}
+
+	if min, err := xraylog.ParseSeverity(m.logLevel); err != nil {
+		errs = append(errs, err)
+	} else {
+		xraylog.Install(m.logger, min)
+	}
+
+	sort.Strings(started)
+	sort.Strings(stopped)
+	return started, stopped, errs
+}
+
+// Instances returns the running instances sorted by name. The slice is a
+// snapshot; the instances themselves live until a later Apply or Close.
+func (m *Manager) Instances() []*Instance {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	instances := make([]*Instance, 0, len(m.running))
+	for _, current := range m.running {
+		instances = append(instances, current.inst)
+	}
+	sort.Slice(instances, func(i, j int) bool { return instances[i].Name < instances[j].Name })
+	return instances
+}
+
+// Close stops every running instance.
+func (m *Manager) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var errs []error
+	for name, current := range m.running {
+		if err := current.inst.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		}
+		delete(m.running, name)
+	}
+	return errors.Join(errs...)
+}
