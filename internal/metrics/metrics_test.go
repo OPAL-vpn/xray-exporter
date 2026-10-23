@@ -299,6 +299,36 @@ func TestDNSSeries(t *testing.T) {
 	}
 }
 
+func TestZeroLatencyNotPublished(t *testing.T) {
+	snap := New()
+	snap.Seed("nl1", []string{"a.test"}, []config.Resolver{resolverDoH("cf", "https://cf.test/dns-query")}, seedTime)
+
+	// A successful probe whose timer never fired reports a zero duration. It
+	// must not become a latency sample.
+	snap.SetHTTP("nl1", "a.test", probe.HTTPResult{Up: true, Status: 200}, secondTime)
+	snap.SetDNS("nl1", "a.test", probe.DNSResult{Up: true}, secondTime)
+	snap.SetResolver("nl1", "cf", "doh", probe.ResolverResult{Up: true}, secondTime)
+	samples := gatherSamples(t, snap)
+
+	targetLabels := labels("config", "nl1", "target", "a.test")
+	resolverLabels := labels("config", "nl1", "resolver", "cf", "transport", "doh")
+	for _, name := range []string{"xray_probe_ttfb_seconds", "xray_probe_total_seconds", "xray_dns_lookup_seconds"} {
+		mustNoSample(t, samples, name, targetLabels)
+	}
+	mustNoSample(t, samples, "xray_resolver_lookup_seconds", resolverLabels)
+
+	// A later zero-timer success also leaves the last real measurement alone.
+	snap.SetHTTP("nl1", "a.test", probe.HTTPResult{Up: true, Status: 200, TTFB: 120 * time.Millisecond, Total: 300 * time.Millisecond}, thirdTime)
+	snap.SetHTTP("nl1", "a.test", probe.HTTPResult{Up: true, Status: 200}, thirdTime)
+	samples = gatherSamples(t, snap)
+	if got := mustSample(t, samples, "xray_probe_ttfb_seconds", targetLabels); got != 0.12 {
+		t.Errorf("xray_probe_ttfb_seconds = %v, want the last non-zero 0.12", got)
+	}
+	if got := mustSample(t, samples, "xray_probe_total_seconds", targetLabels); got != 0.3 {
+		t.Errorf("xray_probe_total_seconds = %v, want the last non-zero 0.3", got)
+	}
+}
+
 func TestDropRemovesSeries(t *testing.T) {
 	snap := New()
 	snap.Seed("nl1", []string{"a.test"}, []config.Resolver{resolverDoH("cf", "https://cf.test/dns-query")}, seedTime)

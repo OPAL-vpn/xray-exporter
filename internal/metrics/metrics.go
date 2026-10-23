@@ -390,8 +390,8 @@ func (s *Snapshot) SetHTTP(config, target string, r probe.HTTPResult, at time.Ti
 	t.http = r
 	t.hasHTTP = true
 	if r.Up {
-		t.ttfb = durationPtr(r.TTFB)
-		t.total = durationPtr(r.Total)
+		setLatency(&t.ttfb, r.TTFB)
+		setLatency(&t.total, r.Total)
 	}
 }
 
@@ -409,7 +409,7 @@ func (s *Snapshot) SetDNS(config, target string, r probe.DNSResult, at time.Time
 	t.dns = r
 	t.hasDNS = true
 	if r.Up {
-		t.dnsLookup = durationPtr(r.RTT)
+		setLatency(&t.dnsLookup, r.RTT)
 	}
 }
 
@@ -447,7 +447,7 @@ func (s *Snapshot) SetResolver(config, resolver, transport string, r probe.Resol
 	state.at = at
 	state.result = r
 	if r.Up {
-		state.lookup = durationPtr(r.RTT)
+		setLatency(&state.lookup, r.RTT)
 	}
 }
 
@@ -603,9 +603,16 @@ func boolValue(v bool) float64 {
 	return 0
 }
 
-func durationPtr(d time.Duration) *float64 {
+// setLatency stores d only when the probe's timer actually ran. A successful
+// probe that reports a zero duration must not publish a zero: it would chart
+// as infinitely fast and poison averages. The last real measurement stays in
+// place, the same way a failed probe leaves it in place.
+func setLatency(dst **float64, d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	seconds := d.Seconds()
-	return &seconds
+	*dst = &seconds
 }
 
 func unixSeconds(t time.Time) float64 {
