@@ -2,8 +2,8 @@ package xraycfg
 
 import (
 	"fmt"
-	"net"
-	"strconv"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 )
 
 // Upstream is the resolver the tunnel DNS inbound forwards to.
@@ -14,13 +14,9 @@ type Upstream struct {
 
 // UpstreamFrom parses a host:port resolver address.
 func UpstreamFrom(s string) (Upstream, error) {
-	host, port, err := net.SplitHostPort(s)
-	if err != nil || host == "" {
+	host, port, err := netutil.HostPort(s)
+	if err != nil {
 		return Upstream{}, fmt.Errorf("upstream %q is not host:port", s)
 	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
-		return Upstream{}, fmt.Errorf("upstream %q is not host:port", s)
-	}
-	return Upstream{Host: host, Port: n}, nil
+	return Upstream{Host: host, Port: port}, nil
 }

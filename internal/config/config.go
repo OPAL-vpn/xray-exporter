@@ -6,10 +6,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 )
 
 // Target is a single probe destination: a hostname with an optional path, or a
@@ -147,12 +148,7 @@ func normalizeHost(host string) (string, error) {
 }
 
 func validateUpstream(upstream string) error {
-	host, port, err := net.SplitHostPort(upstream)
-	if err != nil || host == "" {
-		return errors.New("dns_upstream must be host:port")
-	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
+	if _, _, err := netutil.HostPort(upstream); err != nil {
 		return errors.New("dns_upstream must be host:port")
 	}
 	return nil
