@@ -33,8 +33,8 @@ type Snapshot struct {
 func New() *Snapshot {
 	s := &Snapshot{
 		configs:      make(map[string]*configState),
-		reloads:      reloadTotal.counter,
-		reloadErrors: reloadErrors.counter,
+		reloads:      reloadTotal.newCounter(),
+		reloadErrors: reloadErrors.newCounter(),
 	}
 	s.collector = combinedCollector{&snapshotCollector{snapshot: s}, s.reloads, s.reloadErrors}
 	return s

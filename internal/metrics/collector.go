@@ -32,7 +32,7 @@ type snapshotCollector struct {
 // families describe themselves through combinedCollector.
 func (c *snapshotCollector) Describe(ch chan<- *prometheus.Desc) {
 	for _, metric := range allMetrics {
-		if metric.counter == nil {
+		if !metric.counter {
 			ch <- metric.desc
 		}
 	}

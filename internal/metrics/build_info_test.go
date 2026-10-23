@@ -32,3 +32,15 @@ func TestReloadCounters(t *testing.T) {
 		t.Errorf("xray_exporter_config_reload_errors_total = %v, want 1", got)
 	}
 }
+
+// TestReloadCountersArePerSnapshot pins that a snapshot starts at zero even
+// after another snapshot counted reloads; the counters are state, not schema.
+func TestReloadCountersArePerSnapshot(t *testing.T) {
+	first := New()
+	first.IncReload()
+
+	second := New()
+	if got := mustSample(t, gatherSamples(t, second), "xray_exporter_config_reload_total", map[string]string{}); got != 0 {
+		t.Errorf("fresh snapshot reload counter = %v, want 0", got)
+	}
+}

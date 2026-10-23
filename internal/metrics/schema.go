@@ -12,30 +12,35 @@ const (
 )
 
 // metricDef is one metric family: its name, its descriptor and, for a counter,
-// the counter that renders it. A definition is built once and reused by every
-// scrape, so a scrape allocates values, not schemas.
+// the help needed to build a fresh counter per snapshot. A definition is built
+// once and reused, so a scrape allocates values, not schemas.
 type metricDef struct {
 	name    string
+	help    string
 	desc    *prometheus.Desc
-	counter prometheus.Counter
+	counter bool
 }
 
 func newMetricDef(name, help string, labels ...string) *metricDef {
 	return &metricDef{
 		name: name,
+		help: help,
 		desc: prometheus.NewDesc(namespace+"_"+name, help, labels, nil),
 	}
 }
 
-// newCounterDef builds a counter family. The counter renders itself, so
-// snapshotCollector does not describe or collect it.
+// newCounterDef builds a counter family. Each snapshot builds its own counter
+// from the definition, so counters never leak between snapshots.
 func newCounterDef(name, help string) *metricDef {
-	counter := prometheus.NewCounter(prometheus.CounterOpts{
+	return &metricDef{name: name, help: help, counter: true}
+}
+
+func (m *metricDef) newCounter() prometheus.Counter {
+	return prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
-		Name:      name,
-		Help:      help,
+		Name:      m.name,
+		Help:      m.help,
 	})
-	return &metricDef{name: name, desc: counter.Desc(), counter: counter}
 }
 
 var (
