@@ -153,8 +153,11 @@ xray registers its log handler **globally**, so with several configs in one
 process a line cannot name its config. A failed start is attributed with
 `config=<name>` and xray's error; steady-state warnings are not. Run one
 container per config if attribution matters. `XRAY_LOG_LEVEL` filters xray's
-verbosity; `XRAY_LOG_FILE` mirrors the stream to one file (rotation is the
-host's). `SIGTERM` stops the cycle, closes instances and exits.
+verbosity; `XRAY_LOG_FILE` mirrors the stream to one file. That file is trimmed
+in place once it passes `XRAY_LOG_MAX_BYTES` (default 1 GiB), keeping the newest
+`XRAY_LOG_KEEP_BYTES` (default 750 MiB) from a whole line; set
+`XRAY_LOG_MAX_BYTES=0` to leave the file unbounded and rotation to the host.
+`SIGTERM` stops the cycle, closes instances and exits.
 
 ## Dashboard
 

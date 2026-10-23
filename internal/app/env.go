@@ -10,18 +10,20 @@ import (
 
 // Env is the exporter's configuration; LoadEnv applies the defaults.
 type Env struct {
-	ListenAddr      string
-	ConfigDir       string
-	TargetsFile     string
-	Interval        time.Duration
-	Workers         int
-	ProbeTimeout    time.Duration
-	ResolverTimeout time.Duration
-	EgressTTL       time.Duration
-	XrayLogLevel    string
-	XrayLogFile     string
-	XrayAssetDir    string
-	LogLevel        slog.Level
+	ListenAddr       string
+	ConfigDir        string
+	TargetsFile      string
+	Interval         time.Duration
+	Workers          int
+	ProbeTimeout     time.Duration
+	ResolverTimeout  time.Duration
+	EgressTTL        time.Duration
+	XrayLogLevel     string
+	XrayLogFile      string
+	XrayLogMaxBytes  int64
+	XrayLogKeepBytes int64
+	XrayAssetDir     string
+	LogLevel         slog.Level
 }
 
 // LoadEnv reads the environment; every error names the variable it came from.
@@ -47,6 +49,15 @@ func LoadEnv(getenv func(string) string) (Env, error) {
 	}
 	if env.EgressTTL, err = duration(getenv, "EGRESS_CACHE_TTL", time.Hour); err != nil {
 		return Env{}, err
+	}
+	if env.XrayLogMaxBytes, err = byteCount(getenv, "XRAY_LOG_MAX_BYTES", 1<<30); err != nil {
+		return Env{}, err
+	}
+	if env.XrayLogKeepBytes, err = byteCount(getenv, "XRAY_LOG_KEEP_BYTES", 750<<20); err != nil {
+		return Env{}, err
+	}
+	if env.XrayLogMaxBytes > 0 && (env.XrayLogKeepBytes <= 0 || env.XrayLogKeepBytes >= env.XrayLogMaxBytes) {
+		return Env{}, fmt.Errorf("XRAY_LOG_KEEP_BYTES must be > 0 and below XRAY_LOG_MAX_BYTES")
 	}
 	if env.Workers, err = workers(getenv); err != nil {
 		return Env{}, err
@@ -78,6 +89,21 @@ func duration(getenv func(string) string, name string, def time.Duration) (time.
 		return 0, fmt.Errorf("%s must be > 0", name)
 	}
 	return d, nil
+}
+
+func byteCount(getenv func(string) string, name string, def int64) (int64, error) {
+	raw := getenv(name)
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a byte count: %w", name, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("%s must be >= 0", name)
+	}
+	return n, nil
 }
 
 func workers(getenv func(string) string) (int, error) {

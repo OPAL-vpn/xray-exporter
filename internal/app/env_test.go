@@ -18,18 +18,20 @@ func TestLoadEnvDefaults(t *testing.T) {
 	}
 
 	want := Env{
-		ListenAddr:      ":9787",
-		ConfigDir:       "/config/xray",
-		TargetsFile:     "/config/targets.yaml",
-		Interval:        5 * time.Minute,
-		Workers:         8,
-		ProbeTimeout:    10 * time.Second,
-		ResolverTimeout: 5 * time.Second,
-		EgressTTL:       time.Hour,
-		XrayLogLevel:    "warning",
-		XrayLogFile:     "",
-		XrayAssetDir:    "/usr/local/share/xray",
-		LogLevel:        slog.LevelInfo,
+		ListenAddr:       ":9787",
+		ConfigDir:        "/config/xray",
+		TargetsFile:      "/config/targets.yaml",
+		Interval:         5 * time.Minute,
+		Workers:          8,
+		ProbeTimeout:     10 * time.Second,
+		ResolverTimeout:  5 * time.Second,
+		EgressTTL:        time.Hour,
+		XrayLogLevel:     "warning",
+		XrayLogFile:      "",
+		XrayLogMaxBytes:  1 << 30,
+		XrayLogKeepBytes: 750 << 20,
+		XrayAssetDir:     "/usr/local/share/xray",
+		LogLevel:         slog.LevelInfo,
 	}
 	if env != want {
 		t.Errorf("LoadEnv() = %+v, want %+v", env, want)
@@ -48,6 +50,8 @@ func TestLoadEnvOverrides(t *testing.T) {
 		"EGRESS_CACHE_TTL":    "10m",
 		"XRAY_LOG_LEVEL":      "debug",
 		"XRAY_LOG_FILE":       "/var/log/xray.log",
+		"XRAY_LOG_MAX_BYTES":  "2097152",
+		"XRAY_LOG_KEEP_BYTES": "1048576",
 		"XRAY_LOCATION_ASSET": "/assets",
 		"LOG_LEVEL":           "warn",
 	}))
@@ -56,18 +60,20 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 
 	want := Env{
-		ListenAddr:      "127.0.0.1:9100",
-		ConfigDir:       "/etc/xray",
-		TargetsFile:     "/etc/targets.yaml",
-		Interval:        90 * time.Second,
-		Workers:         3,
-		ProbeTimeout:    3 * time.Second,
-		ResolverTimeout: 2 * time.Second,
-		EgressTTL:       10 * time.Minute,
-		XrayLogLevel:    "debug",
-		XrayLogFile:     "/var/log/xray.log",
-		XrayAssetDir:    "/assets",
-		LogLevel:        slog.LevelWarn,
+		ListenAddr:       "127.0.0.1:9100",
+		ConfigDir:        "/etc/xray",
+		TargetsFile:      "/etc/targets.yaml",
+		Interval:         90 * time.Second,
+		Workers:          3,
+		ProbeTimeout:     3 * time.Second,
+		ResolverTimeout:  2 * time.Second,
+		EgressTTL:        10 * time.Minute,
+		XrayLogLevel:     "debug",
+		XrayLogFile:      "/var/log/xray.log",
+		XrayLogMaxBytes:  2097152,
+		XrayLogKeepBytes: 1048576,
+		XrayAssetDir:     "/assets",
+		LogLevel:         slog.LevelWarn,
 	}
 	if env != want {
 		t.Errorf("LoadEnv() = %+v, want %+v", env, want)
@@ -88,6 +94,10 @@ func TestLoadEnvInvalid(t *testing.T) {
 		{name: "RESOLVER_TIMEOUT", value: "0s", want: "RESOLVER_TIMEOUT"},
 		{name: "EGRESS_CACHE_TTL", value: "-1m", want: "EGRESS_CACHE_TTL"},
 		{name: "LOG_LEVEL", value: "loud", want: "LOG_LEVEL"},
+		{name: "XRAY_LOG_MAX_BYTES", value: "-1", want: "XRAY_LOG_MAX_BYTES"},
+		{name: "XRAY_LOG_MAX_BYTES", value: "1G", want: "XRAY_LOG_MAX_BYTES"},
+		{name: "XRAY_LOG_KEEP_BYTES", value: "lots", want: "XRAY_LOG_KEEP_BYTES"},
+		{name: "XRAY_LOG_KEEP_BYTES", value: "0", want: "XRAY_LOG_KEEP_BYTES"},
 	}
 
 	for _, tc := range cases {
@@ -100,5 +110,31 @@ func TestLoadEnvInvalid(t *testing.T) {
 				t.Errorf("LoadEnv(%s=%s) error = %q, want it to contain %q", tc.name, tc.value, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadEnvRejectsKeepNotBelowMax(t *testing.T) {
+	_, err := LoadEnv(getenvFunc(map[string]string{
+		"XRAY_LOG_MAX_BYTES":  "1048576",
+		"XRAY_LOG_KEEP_BYTES": "1048576",
+	}))
+	if err == nil {
+		t.Fatal("LoadEnv(keep == max) = nil error, want one naming XRAY_LOG_KEEP_BYTES")
+	}
+	if !strings.Contains(err.Error(), "XRAY_LOG_KEEP_BYTES") {
+		t.Errorf("error = %q, want it to name XRAY_LOG_KEEP_BYTES", err)
+	}
+}
+
+func TestLoadEnvZeroMaxDisablesRotation(t *testing.T) {
+	env, err := LoadEnv(getenvFunc(map[string]string{
+		"XRAY_LOG_MAX_BYTES":  "0",
+		"XRAY_LOG_KEEP_BYTES": "1",
+	}))
+	if err != nil {
+		t.Fatalf("LoadEnv(max=0) = %v, want rotation to be switchable off", err)
+	}
+	if env.XrayLogMaxBytes != 0 || env.XrayLogKeepBytes != 1 {
+		t.Errorf("bytes = (%d, %d), want the values as given", env.XrayLogMaxBytes, env.XrayLogKeepBytes)
 	}
 }
