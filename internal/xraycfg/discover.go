@@ -1,7 +1,5 @@
-// Package xraycfg loads xray client configs from a directory and rewrites the
-// two top-level sections the exporter owns: log and inbounds. Every other
-// section keeps its value so a supplied config's outbound, routing and policy
-// are never altered.
+// Package xraycfg loads xray client configs and rewrites only the log and
+// inbounds sections; every other section keeps its value.
 package xraycfg
 
 import (
@@ -13,22 +11,18 @@ import (
 	"strings"
 )
 
-// ErrNoConfigs reports a config directory that was read successfully but holds
-// no *.json file. It is not a read failure: the directory answered, so the empty
-// set is authoritative and the caller must stop every instance instead of
-// keeping the previous ones.
+// ErrNoConfigs means the directory was read and is empty. Callers must stop
+// every instance rather than keep the previous set.
 var ErrNoConfigs = errors.New("no *.json configs")
 
-// Config is one xray client config found in the config directory. Name is the
-// filename stem, which is the Prometheus label.
+// Config is one client config; Name is the filename stem and the metric label.
 type Config struct {
 	Name string
 	Raw  []byte
 }
 
-// Discover returns every *.json regular file in dir, sorted by name stem. An
-// unreadable directory fails with its own error; a readable directory with no
-// configs fails with ErrNoConfigs, which the caller treats as an empty set.
+// Discover returns sorted *.json configs; a readable empty directory returns
+// ErrNoConfigs.
 func Discover(dir string) ([]Config, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

@@ -10,16 +10,12 @@ import (
 )
 
 const (
-	// readyTimeout bounds how long Start waits for the socks inbound to accept.
-	readyTimeout = 10 * time.Second
-	// readyPollInterval is the pause between readiness dials.
+	readyTimeout      = 10 * time.Second
 	readyPollInterval = 100 * time.Millisecond
-	// dialTimeout bounds a single readiness dial, not the whole wait.
-	dialTimeout = 100 * time.Millisecond
+	dialTimeout       = 100 * time.Millisecond
 )
 
-// FreePort reserves and releases a loopback port, so the number handed out is
-// neither fixed nor documented.
+// FreePort reserves and releases a loopback port for xray to bind.
 func FreePort() (int, error) {
 	ln, err := net.Listen("tcp", netutil.LoopbackHost+":0")
 	if err != nil {
@@ -54,8 +50,6 @@ func allocatePorts() (xraycfg.Ports, error) {
 	return xraycfg.Ports{Socks: socks, DNS: dns}, nil
 }
 
-// waitForSocks polls the socks port until it accepts, so Start never returns an
-// instance whose inbound is still unbound.
 func waitForSocks(port int) error {
 	addr := netutil.LoopbackAddr(port)
 	deadline := time.Now().Add(readyTimeout)

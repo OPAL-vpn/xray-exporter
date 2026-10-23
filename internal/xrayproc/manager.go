@@ -12,16 +12,13 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
 )
 
-// managed pairs a running instance with the raw bytes it was started from, so
-// Apply can tell an unchanged config from an edited one.
+// managed pairs an instance with the raw bytes it was started from.
 type managed struct {
 	inst *Instance
 	raw  []byte
 }
 
-// Manager owns the process's xray instances and reconciles them against the
-// configs found on disk. It serializes Apply, so a reload and a scrape-driven
-// Instances read never race.
+// Manager owns the xray instances and serializes Apply against Instances.
 type Manager struct {
 	mu       sync.Mutex
 	up       xraycfg.Upstream
@@ -30,8 +27,7 @@ type Manager struct {
 	running  map[string]managed
 }
 
-// NewManager returns a manager that starts every instance against up and
-// logLevel and routes xray's log stream to logger.
+// NewManager returns a manager for up at logLevel.
 func NewManager(up xraycfg.Upstream, logLevel string, logger *slog.Logger) *Manager {
 	return &Manager{
 		up:       up,
@@ -41,15 +37,10 @@ func NewManager(up xraycfg.Upstream, logLevel string, logger *slog.Logger) *Mana
 	}
 }
 
-// Apply reconciles the running instances with cfgs: configs that disappeared or
-// whose raw bytes changed are stopped, missing ones are started, and unchanged
-// ones keep their instance and ports. A config that fails to start is reported
-// in errs and does not abort the rest of the batch. started and stopped are
-// sorted by config name. An unparseable logLevel is reported in errs too and
-// leaves the previously installed handler in place.
-//
-// Apply installs the log handler after the last start, because every instance
-// start replaces it.
+// Apply stops configs that changed or disappeared, starts missing ones, and
+// keeps unchanged instances. Failed starts are reported without aborting the
+// batch. The log handler is installed after the starts because each start
+// replaces it.
 func (m *Manager) Apply(cfgs []xraycfg.Config) (started, stopped []string, errs []error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -95,8 +86,7 @@ func (m *Manager) Apply(cfgs []xraycfg.Config) (started, stopped []string, errs 
 	return started, stopped, errs
 }
 
-// Instances returns the running instances sorted by name. The slice is a
-// snapshot; the instances themselves live until a later Apply or Close.
+// Instances returns a snapshot sorted by name.
 func (m *Manager) Instances() []*Instance {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -109,7 +99,6 @@ func (m *Manager) Instances() []*Instance {
 	return instances
 }
 
-// Close stops every running instance.
 func (m *Manager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

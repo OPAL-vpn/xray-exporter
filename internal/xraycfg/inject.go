@@ -13,15 +13,12 @@ const (
 	dnsTag   = "xray-exporter-dns"
 )
 
-// Ports are the loopback ports the injected inbounds listen on.
 type Ports struct {
 	Socks int
 	DNS   int
 }
 
-// Inject replaces the top-level log and inbounds sections of raw and returns the
-// re-encoded config. Outbounds must already be non-empty: replacing inbounds is
-// only safe for a complete client config.
+// Inject replaces log and inbounds in raw. Outbounds must already be non-empty.
 func Inject(raw []byte, p Ports, up Upstream, logLevel string) ([]byte, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &doc); err != nil {

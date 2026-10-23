@@ -1,5 +1,4 @@
-// Package netutil holds the addressing helpers shared by the exporter's
-// packages.
+// Package netutil holds addressing helpers shared by the exporter.
 package netutil
 
 import (
@@ -8,21 +7,16 @@ import (
 	"strconv"
 )
 
-// LoopbackHost is the interface every tunnel-facing listener and dialer uses,
-// so probe traffic never leaves the machine's external interfaces.
+// LoopbackHost keeps tunnel-facing listeners and dialers off external interfaces.
 const LoopbackHost = "127.0.0.1"
 
-// LoopbackAddr renders port as an address on LoopbackHost.
 func LoopbackAddr(port int) string {
 	return net.JoinHostPort(LoopbackHost, strconv.Itoa(port))
 }
 
-// errHostPort is the single rejection reason for HostPort; callers name the
-// field they were parsing.
 var errHostPort = errors.New("not host:port")
 
-// HostPort parses a host:port address with a non-empty host and a port in
-// 1..65535.
+// HostPort parses host:port with a non-empty host and a port in 1..65535.
 func HostPort(s string) (string, int, error) {
 	host, rawPort, err := net.SplitHostPort(s)
 	if err != nil || host == "" {

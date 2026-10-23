@@ -13,21 +13,19 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 )
 
-// Target is a single probe destination: a hostname with an optional path, or a
-// bracketed IPv6 literal with an optional path.
+// Target is a host with an optional /path, or a bracketed IPv6 literal.
 type Target struct {
 	Host string `yaml:"host"`
 }
 
-// Resolver is a DNS resolver reached over DoH, DoT, or both.
 type Resolver struct {
 	Name    string `yaml:"name"`
 	DoHURL  string `yaml:"doh_url"`
 	DoTHost string `yaml:"dot_host"`
 }
 
-// Targets is the parsed targets.yaml. Nothing is defaulted: a field missing
-// from the file is an error, not a built-in value.
+// Targets is the parsed targets.yaml. Nothing is defaulted: a missing field is
+// an error.
 type Targets struct {
 	EgressCheckURL string     `yaml:"egress_check_url"`
 	DNSProbeDomain string     `yaml:"dns_probe_domain"`
@@ -36,8 +34,6 @@ type Targets struct {
 	Resolvers      []Resolver `yaml:"dns_resolvers"`
 }
 
-// Load reads and validates a targets file. Errors are prefixed with the file's
-// base name so a log line names the file that was rejected.
 func Load(path string) (*Targets, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -105,18 +101,14 @@ func (t *Targets) validate() error {
 	return validateUpstream(t.DNSUpstream)
 }
 
-// normalizeHost validates one target host and returns it trimmed. The accepted
-// forms are a hostname, a hostname with a /path, and the same two with a
-// bracketed IPv6 literal. Everything downstream — the target label, the HTTPS
-// URL and the DNS query name — derives from this one string, so the form is
-// settled here instead of three consumers tolerating different subsets.
+// normalizeHost validates a target host and returns it trimmed. This is the
+// single owner of the accepted forms.
 func normalizeHost(host string) (string, error) {
 	h := strings.TrimSpace(host)
 	if h == "" {
 		return "", errors.New("host is required")
 	}
-	// A scheme would work for the HTTPS probe and break the DNS probe of the
-	// same target, so it is rejected rather than silently ignored.
+	// A scheme would break the DNS probe of the same target.
 	if strings.Contains(h, "://") {
 		return "", errors.New("host must not include a scheme")
 	}

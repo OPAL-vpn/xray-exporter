@@ -1,7 +1,5 @@
-// Package xrayproc runs one in-process xray-core instance per supplied config.
-// xray is linked in, never executed as a child process, so a single binary
-// carries both the exporter and every tunnel it measures. xray's log stream is
-// process-wide; internal/xraylog bridges it into slog.
+// Package xrayproc runs one in-process xray-core instance per config. xray is
+// linked in, and internal/xraylog bridges its process-wide log stream.
 package xrayproc
 
 import (
@@ -17,7 +15,6 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
 )
 
-// Instance is one running xray-core instance serving one config.
 type Instance struct {
 	Name      string
 	SocksPort int
@@ -29,16 +26,14 @@ type Instance struct {
 	closeErr error
 }
 
-// Close stops the instance and releases its ports. It is safe to call more
-// than once, so a t.Cleanup and a Manager.Close can both own the instance.
+// Close is safe to call more than once.
 func (i *Instance) Close() error {
 	i.closeOne.Do(func() { i.closeErr = i.core.Close() })
 	return i.closeErr
 }
 
-// StartError is one config's failed start. Start has already logged it with the
-// config name and xray's own cause, so a caller aggregating failures must not
-// log it a second time.
+// StartError is one config's failed start. Start already logged it, so callers
+// must not log it again.
 type StartError struct {
 	Config string
 	Err    error
@@ -48,18 +43,12 @@ func (e *StartError) Error() string { return e.Config + ": " + e.Err.Error() }
 
 func (e *StartError) Unwrap() error { return e.Err }
 
-// Start builds and starts the xray instance for cfg, with the injected socks
-// and tunnel-DNS inbounds listening on freshly allocated loopback ports. It
-// returns only once the socks inbound accepts connections; every error names
-// the config, and so does the line Start logs for it, because xray's own log
-// stream does not.
-//
-// logger receives that line and the xray output captured while starting.
+// Start starts cfg with injected socks and tunnel-DNS inbounds and returns once
+// the socks inbound accepts.
 func Start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string, logger *slog.Logger) (*Instance, error) {
 	inst, err := start(cfg, up, logLevel, logger)
 	if err != nil {
-		// Same subsystem as the bridged stream, so one filter shows xray's whole
-		// story: what it said while starting, then why it failed.
+		// Match the bridged stream's subsystem so one filter shows the whole story.
 		logger.Error("xray instance failed to start", "subsystem", "xray", "config", cfg.Name, "error", err)
 		return nil, &StartError{Config: cfg.Name, Err: err}
 	}
@@ -90,10 +79,7 @@ func start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string, logger *slo
 		return nil, err
 	}
 
-	// core.New runs app/log first, which registers xray's own handler for the
-	// whole process; the capture has to come after that or it is already gone.
-	// From here every line the instance emits while starting is buffered and
-	// released with config=<name>.
+	// core.New registers xray's own process-wide handler, so capture after it.
 	release := xraylog.Capture()
 	defer func() { release(cfg.Name, logger) }()
 

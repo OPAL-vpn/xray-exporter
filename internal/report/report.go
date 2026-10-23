@@ -1,6 +1,4 @@
-// Package report renders one measurement result as the human-readable table
-// --once prints: a header per config, the egress verdict, one row per target
-// and one row per resolver.
+// Package report renders the one-shot report table.
 package report
 
 import (
@@ -14,12 +12,11 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// absent is the cell for a value that was never measured. A measured failure is
-// not absent: it says "fail", so a blank cell never hides an outage.
+// absent is the cell for a value that was never measured. A measured failure
+// says "fail", so a blank cell never hides an outage.
 const absent = "-"
 
-// Render writes exp as a report. Cells are tab-separated and aligned by
-// tabwriter; a value that was never measured is "-".
+// Render writes exp as a tab-aligned report.
 func Render(w io.Writer, exp metrics.Export) error {
 	r := &renderer{w: w}
 	r.printf("xray-exporter report %s\n", time.Now().UTC().Format(time.RFC3339))
@@ -29,8 +26,6 @@ func Render(w io.Writer, exp metrics.Export) error {
 	return r.err
 }
 
-// renderer accumulates the first write error, so Render can return it without
-// checking every line.
 type renderer struct {
 	w   io.Writer
 	err error
@@ -43,7 +38,6 @@ func (r *renderer) printf(format string, args ...any) {
 	_, r.err = fmt.Fprintf(r.w, format, args...)
 }
 
-// table runs row against a tabwriter and flushes it.
 func (r *renderer) table(row func(*renderer)) {
 	if r.err != nil {
 		return
@@ -96,8 +90,6 @@ func renderConfig(r *renderer, cfg metrics.ConfigExport) {
 	})
 }
 
-// statusCell is the HTTP status, "fail" when the request produced no response,
-// and "-" when the target was never measured.
 func statusCell(t metrics.TargetExport) string {
 	switch {
 	case !t.HasHTTP:
@@ -109,7 +101,6 @@ func statusCell(t metrics.TargetExport) string {
 	}
 }
 
-// tlsCell is the certificate verdict; it needs a response to mean anything.
 func tlsCell(t metrics.TargetExport) string {
 	if !t.HasHTTP || !t.HTTP.Up {
 		return absent
@@ -134,7 +125,6 @@ func totalCell(t metrics.TargetExport) string {
 	return seconds(t.HTTP.Total)
 }
 
-// dnsCell is "-" for an address literal, which has nothing to resolve.
 func dnsCell(t metrics.TargetExport) string {
 	if !t.HasDNS {
 		return absent
@@ -145,8 +135,6 @@ func dnsCell(t metrics.TargetExport) string {
 	return seconds(t.DNS.RTT)
 }
 
-// resultCell is a resolver transport's round trip, "fail" when it answered
-// nothing, and "-" when the transport was never probed.
 func resultCell(r probe.ResolverResult) string {
 	switch {
 	case r.Up:
@@ -158,13 +146,10 @@ func resultCell(r probe.ResolverResult) string {
 	}
 }
 
-// seconds renders a duration as milliseconds-derived seconds with two
-// decimals, the resolution a human report needs.
 func seconds(d time.Duration) string {
 	return fmt.Sprintf("%.2fs", float64(d.Milliseconds())/1000)
 }
 
-// orAbsent returns value, or "-" when it is empty.
 func orAbsent(value string) string {
 	if value == "" {
 		return absent

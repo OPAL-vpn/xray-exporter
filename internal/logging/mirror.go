@@ -1,5 +1,4 @@
-// Package logging holds slog handlers that are independent of the exporter's
-// wiring.
+// Package logging holds exporter-independent slog handlers.
 package logging
 
 import (
@@ -7,15 +6,12 @@ import (
 	"log/slog"
 )
 
-// Mirror returns a handler that writes every record to both console and file.
-// Each handler keeps its own level filter: Enabled is asked once for the pair,
-// so Handle must not hand a record to a handler that refused it.
+// Mirror writes every record to both handlers. Each keeps its own level filter,
+// so Handle must not pass a record to a handler that refused it.
 func Mirror(console, file slog.Handler) slog.Handler {
 	return mirrorHandler{console: console, file: file}
 }
 
-// mirrorHandler writes every record to two handlers, the console and the
-// XRAY_LOG_FILE mirror.
 type mirrorHandler struct {
 	console slog.Handler
 	file    slog.Handler
@@ -27,8 +23,6 @@ func (m mirrorHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (m mirrorHandler) Handle(ctx context.Context, record slog.Record) error {
 	var err error
-	// Each handler keeps its own level filter: Enabled is asked once for the
-	// pair, so Handle must not hand a record to a handler that refused it.
 	if m.console.Enabled(ctx, record.Level) {
 		err = m.console.Handle(ctx, record)
 	}
