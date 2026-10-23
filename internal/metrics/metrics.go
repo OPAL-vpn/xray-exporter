@@ -54,7 +54,7 @@ var (
 	)
 	descTargetTimestamp = prometheus.NewDesc(
 		namespace+"_target_timestamp_seconds",
-		"When the target's DNS and HTTPS pair last attempted.",
+		"When the target's DNS and HTTPS pair last completed.",
 		[]string{"config", "target"}, nil,
 	)
 	descDNSUp = prometheus.NewDesc(

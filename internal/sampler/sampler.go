@@ -118,20 +118,22 @@ func (s *Sampler) cycle(ctx context.Context, job Job, targets []config.Target, r
 
 // measureTarget runs the DNS and HTTPS probes for one target. It reports
 // whether the target was attempted; a target the deadline reached first is
-// left at its seeded state rather than recorded as a failed probe.
+// left at its seeded state rather than recorded as a failed probe. Both results
+// are published together under one timestamp: the target's timestamp means the
+// DNS+HTTPS pair completed, so advancing it on the DNS half alone would pair a
+// fresh attempt with the previous cycle's status.
 func (s *Sampler) measureTarget(ctx context.Context, job Job, host string) bool {
 	if ctx.Err() != nil {
 		return false
 	}
 
-	if isIPLiteral(host) {
-		s.snap.SkipDNS(job.Name, host)
-	} else {
-		r := s.probers.DNS(ctx, loopback(job.DNSPort), host, s.opts.ProbeTimeout)
+	literal := isIPLiteral(host)
+	var dns probe.DNSResult
+	if !literal {
+		dns = s.probers.DNS(ctx, loopback(job.DNSPort), host, s.opts.ProbeTimeout)
 		if ctx.Err() != nil {
 			return true
 		}
-		s.snap.SetDNS(job.Name, host, r, time.Now())
 	}
 
 	d := s.probers.Dialer(loopback(job.SocksPort), s.opts.ProbeTimeout)
@@ -139,7 +141,14 @@ func (s *Sampler) measureTarget(ctx context.Context, job Job, host string) bool 
 	if ctx.Err() != nil {
 		return true
 	}
-	s.snap.SetHTTP(job.Name, host, r, time.Now())
+
+	at := time.Now()
+	if literal {
+		s.snap.SkipDNS(job.Name, host)
+	} else {
+		s.snap.SetDNS(job.Name, host, dns, at)
+	}
+	s.snap.SetHTTP(job.Name, host, r, at)
 	return true
 }
 

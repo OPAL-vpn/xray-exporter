@@ -142,11 +142,22 @@ func sleep(ctx context.Context, d time.Duration) bool {
 func snapshot(t *testing.T, snap *metrics.Snapshot) map[string]float64 {
 	t.Helper()
 
+	out, err := gatherSnapshot(snap)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	return out
+}
+
+// gatherSnapshot renders every series of the snapshot into a map keyed by name
+// and labels. It returns the error instead of failing so a prober, which runs on
+// a worker goroutine, can hand the reading to the test.
+func gatherSnapshot(snap *metrics.Snapshot) (map[string]float64, error) {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(snap.Collector())
 	families, err := reg.Gather()
 	if err != nil {
-		t.Fatalf("Gather: %v", err)
+		return nil, err
 	}
 
 	out := make(map[string]float64)
@@ -159,7 +170,7 @@ func snapshot(t *testing.T, snap *metrics.Snapshot) map[string]float64 {
 			out[key] = sampleValue(metric)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func sampleValue(metric *dto.Metric) float64 {
@@ -473,11 +484,12 @@ func TestDeadline(t *testing.T) {
 	}
 
 	values := snapshot(t, snap)
-	if got := mustValue(t, values, "xray_target_timestamp_seconds", "config", "nl1", "target", target); got <= float64(seedTime.Unix()) {
-		t.Errorf("xray_target_timestamp_seconds{target=%s} = %v, want advanced by the DNS measurement", target, got)
+	seedSeconds := float64(seedTime.UnixNano()) / 1e9
+	if got := mustValue(t, values, "xray_target_timestamp_seconds", "config", "nl1", "target", target); got != seedSeconds {
+		t.Errorf("xray_target_timestamp_seconds{target=%s} = %v, want the seeded time %v: the deadline cut the HTTPS half of the pair", target, got, seedSeconds)
 	}
 	for _, host := range names[1:] {
-		if got := mustValue(t, values, "xray_target_timestamp_seconds", "config", "nl1", "target", host); got != float64(seedTime.UnixNano())/1e9 {
+		if got := mustValue(t, values, "xray_target_timestamp_seconds", "config", "nl1", "target", host); got != seedSeconds {
 			t.Errorf("xray_target_timestamp_seconds{target=%s} = %v, want the seeded time for a target never measured", host, got)
 		}
 	}
@@ -508,5 +520,52 @@ func TestTargetTimestampAdvances(t *testing.T) {
 	values := snapshot(t, snap)
 	if got := mustValue(t, values, "xray_target_timestamp_seconds", "config", "nl1", "target", target); got <= float64(seedTime.UnixNano())/1e9 {
 		t.Errorf("xray_target_timestamp_seconds = %v, want after the seed time %v", got, seedTime.UnixNano()/1e9)
+	}
+}
+
+// TestTargetTimestampWaitsForThePair pins that the timestamp is stamped once,
+// after the HTTPS result exists: a scrape landing between the two probes must
+// not see a new attempt beside the previous cycle's status.
+func TestTargetTimestampWaitsForThePair(t *testing.T) {
+	const target = "a.test"
+
+	snap := metrics.New()
+	snap.Seed("nl1", []string{target}, nil, seedTime)
+
+	type reading struct {
+		timestamp float64
+		err       error
+	}
+	observed := make(chan reading, 1)
+	fake := &fakeProbers{
+		httpResult: probe.HTTPResult{Up: true, Status: 200},
+		dnsResult:  probe.DNSResult{Up: true, RTT: time.Millisecond},
+	}
+	probers := fake.probers()
+	http := probers.HTTP
+	probers.HTTP = func(ctx context.Context, d probe.Dialer, host string, timeout time.Duration, roots *x509.CertPool) probe.HTTPResult {
+		// The DNS half has been published by now, so this is where a stamp taken
+		// too early would show. The reading is asserted on the test goroutine.
+		values, err := gatherSnapshot(snap)
+		got := reading{err: err}
+		if err == nil {
+			got.timestamp = values[series("xray_target_timestamp_seconds", "config", "nl1", "target", target)]
+		}
+		observed <- got
+		return http(ctx, d, host, timeout, roots)
+	}
+	s := New(snap, probers, testOptions("example.com"))
+
+	s.Cycle(context.Background(),
+		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
+		[]config.Target{{Host: target}}, nil,
+	)
+
+	got := <-observed
+	if got.err != nil {
+		t.Fatalf("gather during the HTTPS probe: %v", got.err)
+	}
+	if seedSeconds := float64(seedTime.UnixNano()) / 1e9; got.timestamp != seedSeconds {
+		t.Errorf("xray_target_timestamp_seconds during the HTTPS probe = %v, want the seeded time %v", got.timestamp, seedSeconds)
 	}
 }
