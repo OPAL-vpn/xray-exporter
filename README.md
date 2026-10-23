@@ -162,6 +162,8 @@ See `deploy/grafana/README.md`.
 
 ## Licence
 
+xray-exporter is licensed under the MIT Licence — see `LICENSE`.
+
 xray-core is licensed under MPL-2.0 and is linked into this binary as a Go
 dependency; the image contains no separate xray executable. The injection
 approach and the egress-verification idea are derived from
