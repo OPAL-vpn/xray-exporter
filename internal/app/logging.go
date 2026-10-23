@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/logging"
 )
@@ -16,7 +15,7 @@ func xrayLoggerFor(env Env, logger *slog.Logger) (*slog.Logger, io.Closer, error
 		return logger, nil, nil
 	}
 
-	f, err := os.OpenFile(env.XrayLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
+	f, err := logging.OpenRotating(env.XrayLogFile, env.XrayLogMaxBytes, env.XrayLogKeepBytes, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("XRAY_LOG_FILE: %w", err)
 	}
