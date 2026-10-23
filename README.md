@@ -27,10 +27,6 @@ label), once per `INTERVAL` (default 5 min):
 - **Egress verification** at start and on reload: whether the config's traffic
   actually leaves through the tunnel (see [Egress](#egress)).
 
-ICMP is not measured: it cannot traverse socks5. Only `log` and `inbounds` are
-replaced in a supplied config; its outbounds, routing and policy are used
-verbatim, so a config's own routing behaviour is what gets charted.
-
 ## Quick start
 
 ```sh
