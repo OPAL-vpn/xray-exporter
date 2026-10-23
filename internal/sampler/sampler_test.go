@@ -390,8 +390,17 @@ func TestWorkersBound(t *testing.T) {
 
 func TestIPLiteralSkipsDNS(t *testing.T) {
 	snap := metrics.New()
-	targets := []config.Target{{Host: "1.1.1.1"}, {Host: "9.9.9.9/status"}}
-	snap.Seed("nl1", []string{targets[0].Host, targets[1].Host}, nil, seedTime)
+	targets := []config.Target{
+		{Host: "1.1.1.1"},
+		{Host: "9.9.9.9/status"},
+		{Host: "[2606:4700:4700::1111]"},
+		{Host: "[2606:4700:4700::1111]/status"},
+	}
+	names := make([]string, len(targets))
+	for i, target := range targets {
+		names[i] = target.Host
+	}
+	snap.Seed("nl1", names, nil, seedTime)
 
 	fake := &fakeProbers{
 		httpResult: probe.HTTPResult{Up: true, Status: 200},

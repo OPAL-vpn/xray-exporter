@@ -235,12 +235,16 @@ func newQuery(name string) *dns.Msg {
 	return query
 }
 
-// hostOnly drops a trailing /path, so "example.com/health" is queried as
-// "example.com" and the literal check sees a bare address.
+// hostOnly returns the name a DNS query asks for: the host without its /path
+// and without the brackets an IPv6 literal carries in a URL, so
+// "example.com/health" is queried as "example.com" and "[::1]/x" as "::1".
 func hostOnly(host string) string {
 	host = strings.TrimSpace(host)
 	if i := strings.IndexByte(host, '/'); i >= 0 {
 		host = host[:i]
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
 	}
 	return host
 }

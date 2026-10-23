@@ -128,15 +128,16 @@ func ProbeHTTPS(ctx context.Context, d Dialer, host string, timeout time.Duratio
 	}
 }
 
-// probeURL turns a target host into the request URL, adding the scheme and the
-// root path when the caller did not supply them.
+// probeURL turns a target host into the request URL. A host is a name or a
+// bracketed address with an optional path, so the scheme and the root path are
+// the probe's own; a scheme in the host is the config error Load rejects.
 func probeURL(host string) (*url.URL, error) {
 	raw := strings.TrimSpace(host)
-	if !strings.Contains(raw, "://") {
-		raw = "https://" + raw
+	if strings.Contains(raw, "://") {
+		return nil, errors.New("probe: host must not include a scheme")
 	}
 
-	target, err := url.Parse(raw)
+	target, err := url.Parse("https://" + raw)
 	if err != nil {
 		return nil, err
 	}

@@ -204,10 +204,14 @@ func (s *Sampler) each(ctx context.Context, n int, fn func(context.Context, int)
 }
 
 // isIPLiteral reports whether a target needs no DNS lookup. A configured target
-// may carry a path, which is not part of the host.
+// is a host with an optional path, and an IPv6 literal arrives bracketed, so
+// both are dropped before the address is parsed.
 func isIPLiteral(host string) bool {
 	if i := strings.IndexByte(host, '/'); i >= 0 {
 		host = host[:i]
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
 	}
 	return net.ParseIP(host) != nil
 }

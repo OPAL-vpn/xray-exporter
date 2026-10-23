@@ -206,6 +206,8 @@ func TestProbeTunnelDNSIPLiteral(t *testing.T) {
 		{name: "ipv4", domain: "1.1.1.1"},
 		{name: "ipv4 with path", domain: "1.1.1.1/resolve"},
 		{name: "ipv6", domain: "2606:4700:4700::1111"},
+		{name: "bracketed ipv6", domain: "[2606:4700:4700::1111]"},
+		{name: "bracketed ipv6 with path", domain: "[2606:4700:4700::1111]/health"},
 	}
 
 	for _, tc := range cases {

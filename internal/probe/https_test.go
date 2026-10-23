@@ -76,6 +76,19 @@ func TestProbeHTTPS(t *testing.T) {
 	}
 }
 
+// TestProbeHTTPSRejectsScheme pins the host form the probe accepts: config.Load
+// rejects a scheme, and the probe agrees instead of building https://https://…
+func TestProbeHTTPSRejectsScheme(t *testing.T) {
+	res := probe.ProbeHTTPS(context.Background(), nil, "https://youtube.com", time.Second, nil)
+
+	if res.Up {
+		t.Error("Up = true, want false for a host carrying a scheme")
+	}
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "scheme") {
+		t.Errorf("Err = %v, want it to reject the scheme", res.Err)
+	}
+}
+
 func TestProbeHTTPSDoesNotFollowRedirect(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://elsewhere.test/", http.StatusFound)

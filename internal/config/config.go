@@ -12,7 +12,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Target is a single probe destination: a hostname, optionally with a path.
+// Target is a single probe destination: a hostname with an optional path, or a
+// bracketed IPv6 literal with an optional path.
 type Target struct {
 	Host string `yaml:"host"`
 }
@@ -74,14 +75,16 @@ func (t *Targets) validate() error {
 		return errors.New("at least one target is required")
 	}
 	seenHosts := make(map[string]struct{}, len(t.Targets))
-	for i, target := range t.Targets {
-		if strings.TrimSpace(target.Host) == "" {
-			return fmt.Errorf("target %d: host is required", i)
+	for i := range t.Targets {
+		host, err := normalizeHost(t.Targets[i].Host)
+		if err != nil {
+			return fmt.Errorf("target %d: %w", i, err)
 		}
-		if _, ok := seenHosts[target.Host]; ok {
-			return fmt.Errorf("duplicate target %q", target.Host)
+		if _, ok := seenHosts[host]; ok {
+			return fmt.Errorf("duplicate target %q", host)
 		}
-		seenHosts[target.Host] = struct{}{}
+		seenHosts[host] = struct{}{}
+		t.Targets[i].Host = host
 	}
 
 	seenNames := make(map[string]struct{}, len(t.Resolvers))
@@ -99,6 +102,48 @@ func (t *Targets) validate() error {
 	}
 
 	return validateUpstream(t.DNSUpstream)
+}
+
+// normalizeHost validates one target host and returns it trimmed. The accepted
+// forms are a hostname, a hostname with a /path, and the same two with a
+// bracketed IPv6 literal. Everything downstream — the target label, the HTTPS
+// URL and the DNS query name — derives from this one string, so the form is
+// settled here instead of three consumers tolerating different subsets.
+func normalizeHost(host string) (string, error) {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return "", errors.New("host is required")
+	}
+	// A scheme would work for the HTTPS probe and break the DNS probe of the
+	// same target, so it is rejected rather than silently ignored.
+	if strings.Contains(h, "://") {
+		return "", errors.New("host must not include a scheme")
+	}
+
+	name := h
+	if i := strings.IndexByte(name, '/'); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		return "", fmt.Errorf("host %q has no name", h)
+	}
+
+	if strings.HasPrefix(name, "[") {
+		if !strings.HasSuffix(name, "]") || net.ParseIP(name[1:len(name)-1]) == nil {
+			return "", fmt.Errorf("host %q is not a bracketed address", h)
+		}
+		return h, nil
+	}
+	if ip := net.ParseIP(name); ip != nil {
+		if ip.To4() == nil {
+			return "", fmt.Errorf("host %q: an IPv6 address must be bracketed", h)
+		}
+		return h, nil
+	}
+	if strings.Contains(name, ":") {
+		return "", fmt.Errorf("host %q must be a hostname or a bracketed IPv6 address", h)
+	}
+	return h, nil
 }
 
 func validateUpstream(upstream string) error {

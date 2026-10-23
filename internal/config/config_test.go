@@ -225,3 +225,89 @@ func loadError(t *testing.T, path string) string {
 	}
 	return err.Error()
 }
+
+// TestLoadRejectsSchemeInHost covers the form that used to work for the HTTPS
+// probe and break the DNS probe of the same target: one place rejects it now.
+func TestLoadRejectsSchemeInHost(t *testing.T) {
+	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
+dns_probe_domain: example.com
+dns_upstream: 1.1.1.1:53
+targets:
+  - host: youtube.com
+  - host: https://youtube.com
+`)
+
+	err := loadError(t, path)
+	if !strings.Contains(err, "targets.yaml: target 1: host must not include a scheme") {
+		t.Errorf("error %q does not reject the scheme with a field-named error", err)
+	}
+}
+
+// TestLoadNormalizesHosts pins the accepted target forms and that the host is
+// stored trimmed, because the label and both probes derive from it.
+func TestLoadNormalizesHosts(t *testing.T) {
+	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
+dns_probe_domain: example.com
+dns_upstream: 1.1.1.1:53
+targets:
+  - host: youtube.com
+  - host: example.com/health
+  - host: "[2606:4700:4700::1111]"
+  - host: "  [2001:db8::1]/status  "
+  - host: 1.1.1.1
+`)
+
+	targets, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	want := []string{
+		"youtube.com",
+		"example.com/health",
+		"[2606:4700:4700::1111]",
+		"[2001:db8::1]/status",
+		"1.1.1.1",
+	}
+	if len(targets.Targets) != len(want) {
+		t.Fatalf("len(Targets) = %d, want %d", len(targets.Targets), len(want))
+	}
+	for i, host := range want {
+		if targets.Targets[i].Host != host {
+			t.Errorf("Targets[%d].Host = %q, want %q", i, targets.Targets[i].Host, host)
+		}
+	}
+}
+
+// TestLoadRejectsUnparseableHosts covers the IPv6 forms that would reach the
+// probe broken: an unbracketed literal is ambiguous in a URL and a bracket pair
+// that does not hold an address is not a host.
+func TestLoadRejectsUnparseableHosts(t *testing.T) {
+	cases := []struct {
+		name string
+		host string
+		want string
+	}{
+		{name: "unbracketed ipv6", host: "2606:4700:4700::1111", want: "an IPv6 address must be bracketed"},
+		{name: "unbracketed ipv6 with path", host: "2606:4700:4700::1111/health", want: "an IPv6 address must be bracketed"},
+		{name: "brackets without an address", host: "[not-an-ip]", want: "is not a bracketed address"},
+		{name: "unclosed bracket", host: "[2001:db8::1", want: "is not a bracketed address"},
+		{name: "port", host: "youtube.com:443", want: "must be a hostname or a bracketed IPv6 address"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
+dns_probe_domain: example.com
+dns_upstream: 1.1.1.1:53
+targets:
+  - host: "`+tc.host+`"
+`)
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "target 0:") || !strings.Contains(err, tc.want) {
+				t.Errorf("error %q does not reject %q with %q", err, tc.host, tc.want)
+			}
+		})
+	}
+}
