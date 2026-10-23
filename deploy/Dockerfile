@@ -6,7 +6,7 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/xray-exporter ./cmd/xray-exporter
 
-FROM alpine:3.22 AS geo
+FROM alpine:3.24 AS geo
 ARG TARGETARCH
 ARG GEO_RELEASE=v26.10.21
 # sha256 of Xray-linux-64.zip (amd64) and Xray-linux-arm64-v8a.zip (arm64), release v26.10.21
@@ -22,7 +22,7 @@ RUN apk add --no-cache curl unzip \
  && echo "${S}  /tmp/x.zip" | sha256sum -c - \
  && mkdir -p /geo && unzip -p /tmp/x.zip geoip.dat > /geo/geoip.dat && unzip -p /tmp/x.zip geosite.dat > /geo/geosite.dat
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/xray-exporter /usr/local/bin/xray-exporter
 COPY --from=geo /geo/ /usr/local/share/xray/
 ENV XRAY_LOCATION_ASSET=/usr/local/share/xray
