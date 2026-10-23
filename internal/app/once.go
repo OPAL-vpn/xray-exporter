@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/health"
 	"github.com/OPAL-vpn/xray-exporter/internal/report"
 )
 
@@ -24,7 +24,7 @@ func (a *application) once(ctx context.Context) error {
 	if err := a.writeReport(); err != nil {
 		return err
 	}
-	if reasons := unhealthy(a.snap.Export(), deadline); len(reasons) > 0 {
+	if reasons := health.Reasons(a.snap.Export(), deadline); len(reasons) > 0 {
 		return fmt.Errorf("one-shot check failed: %s", strings.Join(reasons, "; "))
 	}
 	return nil
@@ -52,34 +52,4 @@ func (a *application) writeReport() error {
 		return err
 	}
 	return f.Close()
-}
-
-// overran reports whether a config's cycle used its entire deadline, which
-// means the deadline cut it short rather than the probes finishing.
-func overran(cycle metrics.CycleExport, deadline time.Duration) bool {
-	return cycle.Done && deadline > 0 && cycle.Duration >= deadline
-}
-
-// unhealthy lists why a one-shot run exits non-zero. A cycle the deadline cut
-// short counts as incomplete: the sampler stamps every pass it started as done,
-// so only the duration against the deadline tells a truncated pass from a
-// finished one — and a pre-deploy gate must not pass on a truncated one.
-func unhealthy(exp metrics.Export, deadline time.Duration) []string {
-	if len(exp.Configs) == 0 {
-		return []string{"no configs"}
-	}
-
-	var reasons []string
-	for _, cfg := range exp.Configs {
-		if !cfg.Running {
-			reasons = append(reasons, cfg.Name+" not running")
-		}
-		if !cfg.Egress.Verified {
-			reasons = append(reasons, cfg.Name+" egress not verified")
-		}
-		if !cfg.Cycle.Done || overran(cfg.Cycle, deadline) {
-			reasons = append(reasons, cfg.Name+" cycle did not complete")
-		}
-	}
-	return reasons
 }

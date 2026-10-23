@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/health"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
 )
@@ -37,7 +38,7 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	exp := a.snap.Export()
 	a.logProbes(exp, jobs)
 	for _, cfg := range exp.Configs {
-		if hasJob(jobs, cfg.Name) && overran(cfg.Cycle, deadline) {
+		if hasJob(jobs, cfg.Name) && health.Overran(cfg.Cycle, deadline) {
 			a.logger.Warn("cycle overrun", "config", cfg.Name, "duration", cfg.Cycle.Duration)
 		}
 	}
