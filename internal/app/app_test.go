@@ -101,13 +101,15 @@ func TestOverran(t *testing.T) {
 }
 
 func TestUnhealthy(t *testing.T) {
+	const deadline = 150 * time.Second
+
 	healthy := metrics.ConfigExport{
 		Name:    "nl1",
 		Running: true,
 		Egress:  metrics.EgressExport{Verified: true},
-		Cycle:   metrics.CycleExport{Done: true},
+		Cycle:   metrics.CycleExport{Done: true, Duration: 2 * time.Second},
 	}
-	if reasons := unhealthy(metrics.Export{Configs: []metrics.ConfigExport{healthy}}); len(reasons) != 0 {
+	if reasons := unhealthy(metrics.Export{Configs: []metrics.ConfigExport{healthy}}, deadline); len(reasons) != 0 {
 		t.Errorf("unhealthy(healthy config) = %v, want no reasons", reasons)
 	}
 
@@ -116,7 +118,7 @@ func TestUnhealthy(t *testing.T) {
 		Egress: metrics.EgressExport{},
 		Cycle:  metrics.CycleExport{},
 	}
-	reasons := unhealthy(metrics.Export{Configs: []metrics.ConfigExport{broken}})
+	reasons := unhealthy(metrics.Export{Configs: []metrics.ConfigExport{broken}}, deadline)
 	joined := strings.Join(reasons, "; ")
 	for _, want := range []string{"not running", "egress not verified", "cycle did not complete"} {
 		if !strings.Contains(joined, want) {
@@ -124,8 +126,32 @@ func TestUnhealthy(t *testing.T) {
 		}
 	}
 
-	if reasons := unhealthy(metrics.Export{}); len(reasons) == 0 {
+	if reasons := unhealthy(metrics.Export{}, deadline); len(reasons) == 0 {
 		t.Error("unhealthy(empty export) = no reasons, want one for the absence of configs")
+	}
+}
+
+// TestUnhealthyReportsATruncatedCycle covers the one-shot gate: the sampler
+// stamps a pass the deadline cut short as done, so a config whose cycle used the
+// whole deadline must not read as complete.
+func TestUnhealthyReportsATruncatedCycle(t *testing.T) {
+	const deadline = 150 * time.Second
+	now := time.Now()
+
+	snap := metrics.New()
+	snap.Seed("nl1", []string{"a.test"}, nil, now)
+	snap.SetConfig("nl1", true, "26.1.1")
+	snap.SetEgress("nl1", egress.Result{IP: "203.0.113.7", Verified: true}, now)
+
+	snap.SetCycle("nl1", now, deadline, 1)
+	reasons := unhealthy(snap.Export(), deadline)
+	if len(reasons) != 1 || reasons[0] != "nl1 cycle did not complete" {
+		t.Fatalf("unhealthy(truncated cycle) = %v, want [nl1 cycle did not complete]", reasons)
+	}
+
+	snap.SetCycle("nl1", now, deadline-time.Second, 1)
+	if reasons := unhealthy(snap.Export(), deadline); len(reasons) != 0 {
+		t.Errorf("unhealthy(completed cycle) = %v, want no reasons", reasons)
 	}
 }
 

@@ -547,7 +547,7 @@ func (a *application) once(ctx context.Context) error {
 	if err := a.writeReport(); err != nil {
 		return err
 	}
-	if reasons := unhealthy(a.snap.Export()); len(reasons) > 0 {
+	if reasons := unhealthy(a.snap.Export(), deadline); len(reasons) > 0 {
 		return fmt.Errorf("one-shot check failed: %s", strings.Join(reasons, "; "))
 	}
 	return nil
@@ -622,8 +622,11 @@ func overran(cycle metrics.CycleExport, deadline time.Duration) bool {
 	return cycle.Done && deadline > 0 && cycle.Duration >= deadline
 }
 
-// unhealthy lists why a one-shot run exits non-zero.
-func unhealthy(exp metrics.Export) []string {
+// unhealthy lists why a one-shot run exits non-zero. A cycle the deadline cut
+// short counts as incomplete: the sampler stamps every pass it started as done,
+// so only the duration against the deadline tells a truncated pass from a
+// finished one — and a pre-deploy gate must not pass on a truncated one.
+func unhealthy(exp metrics.Export, deadline time.Duration) []string {
 	if len(exp.Configs) == 0 {
 		return []string{"no configs"}
 	}
@@ -636,7 +639,7 @@ func unhealthy(exp metrics.Export) []string {
 		if !cfg.Egress.Verified {
 			reasons = append(reasons, cfg.Name+" egress not verified")
 		}
-		if !cfg.Cycle.Done {
+		if !cfg.Cycle.Done || overran(cfg.Cycle, deadline) {
 			reasons = append(reasons, cfg.Name+" cycle did not complete")
 		}
 	}
