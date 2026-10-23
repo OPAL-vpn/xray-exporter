@@ -6,7 +6,6 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// configState is everything known about one named xray config.
 type configState struct {
 	running   bool
 	version   string
@@ -16,9 +15,8 @@ type configState struct {
 	cycle     cycleState
 }
 
-// targetState is one (config, target) pair. The raw results are kept for the
-// one-shot report; the latency fields stay nil until a successful measurement,
-// so the gauge is absent rather than zero.
+// targetState keeps raw results for the report. The latency pointers stay nil
+// until a successful measurement, so the gauge is absent rather than zero.
 type targetState struct {
 	at         time.Time
 	http       probe.HTTPResult
@@ -31,7 +29,6 @@ type targetState struct {
 	dnsSkipped bool
 }
 
-// resolverKey identifies one (config, resolver, transport) pair.
 type resolverKey struct {
 	name      string
 	transport string
@@ -56,7 +53,6 @@ type cycleState struct {
 	targets int
 }
 
-// newConfigState returns the empty state Seed fills in.
 func newConfigState() *configState {
 	return &configState{
 		targets:   make(map[string]*targetState),

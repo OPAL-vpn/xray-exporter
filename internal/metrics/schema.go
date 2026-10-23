@@ -2,18 +2,15 @@ package metrics
 
 import "github.com/prometheus/client_golang/prometheus"
 
-// namespace prefixes every metric the exporter publishes.
 const namespace = "xray"
 
-// Transport values for the transport label. Only configured transports exist.
+// Transport values for the transport label.
 const (
 	TransportDoH = "doh"
 	TransportDoT = "dot"
 )
 
-// metricDef is one metric family: its name, its descriptor and, for a counter,
-// the help needed to build a fresh counter per snapshot. A definition is built
-// once and reused, so a scrape allocates values, not schemas.
+// metricDef is one metric family, built once and reused across scrapes.
 type metricDef struct {
 	name    string
 	help    string
@@ -29,8 +26,7 @@ func newMetricDef(name, help string, labels ...string) *metricDef {
 	}
 }
 
-// newCounterDef builds a counter family. Each snapshot builds its own counter
-// from the definition, so counters never leak between snapshots.
+// newCounterDef defines a counter family; each snapshot builds its own counter.
 func newCounterDef(name, help string) *metricDef {
 	return &metricDef{name: name, help: help, counter: true}
 }
@@ -110,7 +106,7 @@ var (
 		"version", "go_version")
 )
 
-// allMetrics is every metric family this package emits, in AllNames order.
+// allMetrics is every family, in AllNames order.
 var allMetrics = []*metricDef{
 	probeUp, probeHTTPStatus, probeTLSOk, probeTTFB, probeTotal,
 	targetTimestamp, dnsUp, dnsLookup,
@@ -122,8 +118,7 @@ var allMetrics = []*metricDef{
 	buildInfo,
 }
 
-// AllNames returns every metric name the package can emit, so the dashboard
-// can be checked against the exporter instead of against memory.
+// AllNames lists every metric name, for checking the dashboard.
 func AllNames() []string {
 	names := make([]string, len(allMetrics))
 	for i, metric := range allMetrics {

@@ -7,13 +7,11 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// Export is the snapshot as plain values, for the one-shot report. Configs,
-// targets and resolvers are sorted by name so a report is stable.
+// Export is the snapshot as plain values, sorted for a stable report.
 type Export struct {
 	Configs []ConfigExport
 }
 
-// ConfigExport is one config's state.
 type ConfigExport struct {
 	Name        string
 	Running     bool
@@ -24,14 +22,12 @@ type ConfigExport struct {
 	Resolvers   []ResolverExport
 }
 
-// EgressExport is the last egress verification. IP is empty and Verified false
-// when the check has not run or could not fetch an address.
+// EgressExport is the last verdict; IP is empty when it could not be fetched.
 type EgressExport struct {
 	IP       string
 	Verified bool
 }
 
-// CycleExport is the last completed measurement cycle.
 type CycleExport struct {
 	Done     bool
 	At       time.Time
@@ -39,10 +35,8 @@ type CycleExport struct {
 	Targets  int
 }
 
-// TargetExport is one (config, target) row. HasHTTP and HasDNS report whether
-// that measurement ever ran; a target that has only been seeded carries the
-// zero result with the flag false, and a target skipped as an address literal
-// never has DNS.
+// TargetExport keeps raw results plus whether each measurement ran. A seeded
+// target has neither; an IP-literal target has no DNS.
 type TargetExport struct {
 	Target  string
 	HasHTTP bool
@@ -51,19 +45,17 @@ type TargetExport struct {
 	DNS     probe.DNSResult
 }
 
-// ResolverExport is one resolver's configured transports.
 type ResolverExport struct {
 	Name       string
 	Transports []TransportExport
 }
 
-// TransportExport is the last result for one resolver transport.
 type TransportExport struct {
 	Transport string
 	Result    probe.ResolverResult
 }
 
-// Export copies the snapshot out from under the lock.
+// Export copies the snapshot under a read lock.
 func (s *Snapshot) Export() Export {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -1,6 +1,5 @@
-// Package metrics holds the last result of every probe as a Prometheus
-// snapshot: setters record measurements, the collector renders them at scrape
-// time, and Collect does no work beyond reading the snapshot under a lock.
+// Package metrics keeps the last probe results as a Prometheus snapshot.
+// Setters record measurements; the collector renders them at scrape time.
 package metrics
 
 import (
@@ -14,9 +13,8 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// Snapshot is the last result of every measurement, safe for concurrent
-// setters and scrapes. Seed declares which entities exist, the setters only
-// update declared entities, and Drop removes them.
+// Snapshot holds the last result of every measurement and is safe for
+// concurrent setters and scrapes. Setters ignore entities Seed did not declare.
 type Snapshot struct {
 	mu      sync.RWMutex
 	configs map[string]*configState
@@ -29,7 +27,7 @@ type Snapshot struct {
 	collector    prometheus.Collector
 }
 
-// New returns an empty snapshot: no config has a series until Seed.
+// New returns an empty snapshot.
 func New() *Snapshot {
 	s := &Snapshot{
 		configs:      make(map[string]*configState),
@@ -40,13 +38,9 @@ func New() *Snapshot {
 	return s
 }
 
-// Seed declares the entities a config is expected to measure. Every target and
-// every configured resolver transport gets its series before the first probe,
-// with up 0 and the given time as its timestamp. Entities no longer present are
-// removed; existing entities keep their last measurement, so a reload never
-// produces an orphan or loses history. Setters only update entities Seed
-// declared, so a result that arrives after a reload is discarded instead of
-// resurrecting a removed series.
+// Seed reconciles a config's declared targets and resolver transports: existing
+// measurements are kept, entities no longer present are removed. Setters only
+// update declared entities, so a late result cannot resurrect a removed series.
 func (s *Snapshot) Seed(config string, targets []string, resolvers []config.Resolver, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,7 +81,6 @@ func (s *Snapshot) Seed(config string, targets []string, resolvers []config.Reso
 	}
 }
 
-// resolverTransports lists the transports a resolver is configured for.
 func resolverTransports(resolver config.Resolver) []string {
 	var transports []string
 	if resolver.DoHURL != "" {
@@ -99,7 +92,6 @@ func resolverTransports(resolver config.Resolver) []string {
 	return transports
 }
 
-// Drop removes every series belonging to a config.
 func (s *Snapshot) Drop(config string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -107,9 +99,8 @@ func (s *Snapshot) Drop(config string) {
 	delete(s.configs, config)
 }
 
-// SetConfig records whether the config's instance runs and, when known, which
-// xray version it runs. An empty version leaves a previously known one in
-// place: a failed start has no new version to report.
+// SetConfig records whether the instance runs. An empty version keeps the last
+// known one, because a failed start has none to report.
 func (s *Snapshot) SetConfig(config string, running bool, version string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -124,7 +115,6 @@ func (s *Snapshot) SetConfig(config string, running bool, version string) {
 	}
 }
 
-// SetBuildInfo records the exporter's own build identity.
 func (s *Snapshot) SetBuildInfo(version, goVersion string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,9 +123,8 @@ func (s *Snapshot) SetBuildInfo(version, goVersion string) {
 	s.buildGoVersion = goVersion
 }
 
-// SetEgress records one egress verification. A failed check moves the time and
-// the verdict but keeps the last observed address, the way a failed probe keeps
-// its last latency.
+// SetEgress records a verdict, keeping the last observed address when the check
+// fails.
 func (s *Snapshot) SetEgress(config string, r egress.Result, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -151,7 +140,6 @@ func (s *Snapshot) SetEgress(config string, r egress.Result, at time.Time) {
 	}
 }
 
-// SetCycle records a completed measurement cycle.
 func (s *Snapshot) SetCycle(config string, at time.Time, dur time.Duration, targets int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -163,8 +151,7 @@ func (s *Snapshot) SetCycle(config string, at time.Time, dur time.Duration, targ
 	cfg.cycle = cycleState{done: true, at: at, dur: dur, targets: targets}
 }
 
-// SetHTTP records an HTTPS probe. A failed probe clears up/status/tls and moves
-// the timestamp but leaves the last successful latencies in place.
+// SetHTTP records a probe, keeping the last successful latencies when it fails.
 func (s *Snapshot) SetHTTP(config, target string, r probe.HTTPResult, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,8 +169,7 @@ func (s *Snapshot) SetHTTP(config, target string, r probe.HTTPResult, at time.Ti
 	}
 }
 
-// SetDNS records a tunnel DNS lookup. A failed lookup moves the timestamp but
-// leaves the last successful round trip in place.
+// SetDNS records a lookup, keeping the last successful round trip when it fails.
 func (s *Snapshot) SetDNS(config, target string, r probe.DNSResult, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -200,9 +186,8 @@ func (s *Snapshot) SetDNS(config, target string, r probe.DNSResult, at time.Time
 	}
 }
 
-// SkipDNS removes a target's DNS series entirely. An address literal has
-// nothing to resolve, so publishing a permanently failing or zero lookup would
-// describe a measurement that never happened.
+// SkipDNS removes a target's DNS series; an address literal has nothing to
+// resolve.
 func (s *Snapshot) SkipDNS(config, target string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -217,8 +202,8 @@ func (s *Snapshot) SkipDNS(config, target string) {
 	t.dnsLookup = nil
 }
 
-// SetResolver records one DoH or DoT probe. A failed probe moves the timestamp
-// but leaves the last successful round trip in place.
+// SetResolver records a probe, keeping the last successful round trip when it
+// fails.
 func (s *Snapshot) SetResolver(config, resolver, transport string, r probe.ResolverResult, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -238,8 +223,8 @@ func (s *Snapshot) SetResolver(config, resolver, transport string, r probe.Resol
 	}
 }
 
-// target returns the state for target, or nil when Seed did not declare it.
-// The caller holds the write lock.
+// target returns nil when Seed did not declare it. The caller holds the write
+// lock.
 func (s *Snapshot) target(config, target string) *targetState {
 	cfg, ok := s.configs[config]
 	if !ok {
@@ -248,26 +233,21 @@ func (s *Snapshot) target(config, target string) *targetState {
 	return cfg.targets[target]
 }
 
-// IncReload records one applied configuration reload.
 func (s *Snapshot) IncReload() {
 	s.reloads.Inc()
 }
 
-// IncReloadError records one configuration reload that failed.
 func (s *Snapshot) IncReloadError() {
 	s.reloadErrors.Inc()
 }
 
-// Collector returns the collector to register with a Prometheus registry. It
-// renders the last snapshot; it never waits for a measurement.
+// Collector renders the last snapshot without waiting for a measurement.
 func (s *Snapshot) Collector() prometheus.Collector {
 	return s.collector
 }
 
-// setLatency stores d only when the probe's timer actually ran. A successful
-// probe that reports a zero duration must not publish a zero: it would chart
-// as infinitely fast and poison averages. The last real measurement stays in
-// place, the same way a failed probe leaves it in place.
+// setLatency ignores a zero duration: publishing it would chart as infinitely
+// fast and poison averages.
 func setLatency(dst **float64, d time.Duration) {
 	if d <= 0 {
 		return

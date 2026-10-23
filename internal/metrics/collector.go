@@ -7,8 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// combinedCollector renders the snapshot and the reload counters as one
-// collector, so a registry only has to know Snapshot.Collector.
+// combinedCollector renders the snapshot and reload counters as one collector.
 type combinedCollector []prometheus.Collector
 
 func (c combinedCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -23,13 +22,11 @@ func (c combinedCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// snapshotCollector turns the snapshot into metric families.
 type snapshotCollector struct {
 	snapshot *Snapshot
 }
 
-// Describe reports the schema of every family the collector renders. Counter
-// families describe themselves through combinedCollector.
+// Describe skips counter families; they describe themselves.
 func (c *snapshotCollector) Describe(ch chan<- *prometheus.Desc) {
 	for _, metric := range allMetrics {
 		if !metric.counter {
@@ -38,7 +35,6 @@ func (c *snapshotCollector) Describe(ch chan<- *prometheus.Desc) {
 	}
 }
 
-// Collect renders the snapshot under a read lock.
 func (c *snapshotCollector) Collect(ch chan<- prometheus.Metric) {
 	s := c.snapshot
 
@@ -133,7 +129,7 @@ func unixSeconds(t time.Time) float64 {
 	return float64(t.UnixNano()) / 1e9
 }
 
-// sortedKeys returns a map's keys in order, so a scrape is stable.
+// sortedKeys keeps a scrape stable.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
