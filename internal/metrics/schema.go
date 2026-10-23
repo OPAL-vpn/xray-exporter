@@ -11,139 +11,118 @@ const (
 	TransportDoT = "dot"
 )
 
-// The descriptions are built once and reused by every const metric: a scrape
-// allocates values, not schemas.
+// metricDef is one metric family: its name, its descriptor and, for a counter,
+// the counter that renders it. A definition is built once and reused by every
+// scrape, so a scrape allocates values, not schemas.
+type metricDef struct {
+	name    string
+	desc    *prometheus.Desc
+	counter prometheus.Counter
+}
+
+func newMetricDef(name, help string, labels ...string) *metricDef {
+	return &metricDef{
+		name: name,
+		desc: prometheus.NewDesc(namespace+"_"+name, help, labels, nil),
+	}
+}
+
+// newCounterDef builds a counter family. The counter renders itself, so
+// snapshotCollector does not describe or collect it.
+func newCounterDef(name, help string) *metricDef {
+	counter := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      name,
+		Help:      help,
+	})
+	return &metricDef{name: name, desc: counter.Desc(), counter: counter}
+}
+
 var (
-	descProbeUp = prometheus.NewDesc(
-		namespace+"_probe_up",
+	probeUp = newMetricDef("probe_up",
 		"Whether the HTTPS probe got a response from the target.",
-		[]string{"config", "target"}, nil,
-	)
-	descProbeHTTPStatus = prometheus.NewDesc(
-		namespace+"_probe_http_status",
+		"config", "target")
+	probeHTTPStatus = newMetricDef("probe_http_status",
 		"HTTP status code of the last probe, 0 when no response arrived.",
-		[]string{"config", "target"}, nil,
-	)
-	descProbeTLSOk = prometheus.NewDesc(
-		namespace+"_probe_tls_ok",
+		"config", "target")
+	probeTLSOk = newMetricDef("probe_tls_ok",
 		"Whether the target certificate chained to a trusted root and matched the host.",
-		[]string{"config", "target"}, nil,
-	)
-	descProbeTTFB = prometheus.NewDesc(
-		namespace+"_probe_ttfb_seconds",
+		"config", "target")
+	probeTTFB = newMetricDef("probe_ttfb_seconds",
 		"Time to the first response byte of the last successful probe.",
-		[]string{"config", "target"}, nil,
-	)
-	descProbeTotal = prometheus.NewDesc(
-		namespace+"_probe_total_seconds",
+		"config", "target")
+	probeTotal = newMetricDef("probe_total_seconds",
 		"Full request time of the last successful probe.",
-		[]string{"config", "target"}, nil,
-	)
-	descTargetTimestamp = prometheus.NewDesc(
-		namespace+"_target_timestamp_seconds",
+		"config", "target")
+	targetTimestamp = newMetricDef("target_timestamp_seconds",
 		"When the target's DNS and HTTPS pair last completed.",
-		[]string{"config", "target"}, nil,
-	)
-	descDNSUp = prometheus.NewDesc(
-		namespace+"_dns_up",
+		"config", "target")
+	dnsUp = newMetricDef("dns_up",
 		"Whether the tunnel DNS lookup got an answer.",
-		[]string{"config", "target"}, nil,
-	)
-	descDNSLookup = prometheus.NewDesc(
-		namespace+"_dns_lookup_seconds",
+		"config", "target")
+	dnsLookup = newMetricDef("dns_lookup_seconds",
 		"Round trip of the last successful tunnel DNS lookup.",
-		[]string{"config", "target"}, nil,
-	)
-	descResolverUp = prometheus.NewDesc(
-		namespace+"_resolver_up",
+		"config", "target")
+	resolverUp = newMetricDef("resolver_up",
 		"Whether the DoH or DoT resolver answered through the tunnel.",
-		[]string{"config", "resolver", "transport"}, nil,
-	)
-	descResolverLookup = prometheus.NewDesc(
-		namespace+"_resolver_lookup_seconds",
+		"config", "resolver", "transport")
+	resolverLookup = newMetricDef("resolver_lookup_seconds",
 		"Round trip of the last successful resolver query.",
-		[]string{"config", "resolver", "transport"}, nil,
-	)
-	descResolverTimestamp = prometheus.NewDesc(
-		namespace+"_resolver_timestamp_seconds",
+		"config", "resolver", "transport")
+	resolverTimestamp = newMetricDef("resolver_timestamp_seconds",
 		"When the resolver was last attempted.",
-		[]string{"config", "resolver", "transport"}, nil,
-	)
-	descEgressVerified = prometheus.NewDesc(
-		namespace+"_egress_verified",
+		"config", "resolver", "transport")
+	egressVerified = newMetricDef("egress_verified",
 		"Whether the config's traffic leaves through its tunnel.",
-		[]string{"config"}, nil,
-	)
-	descEgressIPInfo = prometheus.NewDesc(
-		namespace+"_egress_ip_info",
+		"config")
+	egressIPInfo = newMetricDef("egress_ip_info",
 		"The egress address the tunnel was observed to use.",
-		[]string{"config", "ip"}, nil,
-	)
-	descEgressTimestamp = prometheus.NewDesc(
-		namespace+"_egress_timestamp_seconds",
+		"config", "ip")
+	egressTimestamp = newMetricDef("egress_timestamp_seconds",
 		"When egress was last verified.",
-		[]string{"config"}, nil,
-	)
-	descConfigRunning = prometheus.NewDesc(
-		namespace+"_config_running",
+		"config")
+	configRunning = newMetricDef("config_running",
 		"Whether the config's xray instance is up.",
-		[]string{"config"}, nil,
-	)
-	descConfigInfo = prometheus.NewDesc(
-		namespace+"_config_info",
+		"config")
+	configInfo = newMetricDef("config_info",
 		"xray version of the running instance.",
-		[]string{"config", "xray_version"}, nil,
-	)
-	descCycleTimestamp = prometheus.NewDesc(
-		namespace+"_cycle_timestamp_seconds",
+		"config", "xray_version")
+	cycleTimestamp = newMetricDef("cycle_timestamp_seconds",
 		"When the last measurement cycle finished.",
-		[]string{"config"}, nil,
-	)
-	descCycleDuration = prometheus.NewDesc(
-		namespace+"_cycle_duration_seconds",
+		"config")
+	cycleDuration = newMetricDef("cycle_duration_seconds",
 		"Wall time of the last measurement cycle.",
-		[]string{"config"}, nil,
-	)
-	descCycleTargets = prometheus.NewDesc(
-		namespace+"_cycle_targets_total",
+		"config")
+	cycleTargets = newMetricDef("cycle_targets_total",
 		"Targets attempted by the last measurement cycle.",
-		[]string{"config"}, nil,
-	)
-	descBuildInfo = prometheus.NewDesc(
-		namespace+"_build_info",
+		"config")
+	reloadTotal = newCounterDef("exporter_config_reload_total",
+		"Configuration reloads applied.")
+	reloadErrors = newCounterDef("exporter_config_reload_errors_total",
+		"Configuration reloads that failed.")
+	buildInfo = newMetricDef("build_info",
 		"Build version and Go version of the exporter.",
-		[]string{"version", "go_version"}, nil,
-	)
+		"version", "go_version")
 )
 
-// allNames is every metric name this package emits, in emission order.
-var allNames = []string{
-	namespace + "_probe_up",
-	namespace + "_probe_http_status",
-	namespace + "_probe_tls_ok",
-	namespace + "_probe_ttfb_seconds",
-	namespace + "_probe_total_seconds",
-	namespace + "_target_timestamp_seconds",
-	namespace + "_dns_up",
-	namespace + "_dns_lookup_seconds",
-	namespace + "_resolver_up",
-	namespace + "_resolver_lookup_seconds",
-	namespace + "_resolver_timestamp_seconds",
-	namespace + "_egress_verified",
-	namespace + "_egress_ip_info",
-	namespace + "_egress_timestamp_seconds",
-	namespace + "_config_running",
-	namespace + "_config_info",
-	namespace + "_cycle_timestamp_seconds",
-	namespace + "_cycle_duration_seconds",
-	namespace + "_cycle_targets_total",
-	namespace + "_exporter_config_reload_total",
-	namespace + "_exporter_config_reload_errors_total",
-	namespace + "_build_info",
+// allMetrics is every metric family this package emits, in AllNames order.
+var allMetrics = []*metricDef{
+	probeUp, probeHTTPStatus, probeTLSOk, probeTTFB, probeTotal,
+	targetTimestamp, dnsUp, dnsLookup,
+	resolverUp, resolverLookup, resolverTimestamp,
+	egressVerified, egressIPInfo, egressTimestamp,
+	configRunning, configInfo,
+	cycleTimestamp, cycleDuration, cycleTargets,
+	reloadTotal, reloadErrors,
+	buildInfo,
 }
 
 // AllNames returns every metric name the package can emit, so the dashboard
 // can be checked against the exporter instead of against memory.
 func AllNames() []string {
-	return append([]string(nil), allNames...)
+	names := make([]string, len(allMetrics))
+	for i, metric := range allMetrics {
+		names[i] = namespace + "_" + metric.name
+	}
+	return names
 }

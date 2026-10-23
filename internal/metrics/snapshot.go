@@ -32,17 +32,9 @@ type Snapshot struct {
 // New returns an empty snapshot: no config has a series until Seed.
 func New() *Snapshot {
 	s := &Snapshot{
-		configs: make(map[string]*configState),
-		reloads: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "exporter_config_reload_total",
-			Help:      "Configuration reloads applied.",
-		}),
-		reloadErrors: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "exporter_config_reload_errors_total",
-			Help:      "Configuration reloads that failed.",
-		}),
+		configs:      make(map[string]*configState),
+		reloads:      reloadTotal.counter,
+		reloadErrors: reloadErrors.counter,
 	}
 	s.collector = combinedCollector{&snapshotCollector{snapshot: s}, s.reloads, s.reloadErrors}
 	return s
