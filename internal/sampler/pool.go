@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-// each runs fn over n indexes on a worker pool of Options.Workers goroutines.
 func (s *Sampler) each(ctx context.Context, n int, fn func(context.Context, int)) {
 	workers := s.opts.Workers
 	if workers < 1 {
@@ -33,6 +32,3 @@ func (s *Sampler) each(ctx context.Context, n int, fn func(context.Context, int)
 	}
 	wg.Wait()
 }
-
-// isIPLiteral reports whether a target needs no DNS lookup. A configured target
-// is a host with an optional path, and an IPv6 literal arrives bracketed, so

@@ -11,7 +11,6 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// cycle measures one job's targets and resolvers.
 func (s *Sampler) cycle(ctx context.Context, job Job, targets []config.Target, resolvers []config.Resolver) {
 	start := time.Now()
 	if s.opts.Deadline > 0 {
@@ -33,12 +32,8 @@ func (s *Sampler) cycle(ctx context.Context, job Job, targets []config.Target, r
 	s.snap.SetCycle(job.Name, time.Now(), time.Since(start), int(atomic.LoadInt64(&attempted)))
 }
 
-// measureTarget runs the DNS and HTTPS probes for one target. It reports
-// whether the target was attempted; a target the deadline reached first is
-// left at its seeded state rather than recorded as a failed probe. Both results
-// are published together under one timestamp: the target's timestamp means the
-// DNS+HTTPS pair completed, so advancing it on the DNS half alone would pair a
-// fresh attempt with the previous cycle's status.
+// measureTarget records DNS and HTTP together: the target timestamp means the
+// pair completed. A target the deadline reached first stays seeded.
 func (s *Sampler) measureTarget(ctx context.Context, job Job, host string) bool {
 	if ctx.Err() != nil {
 		return false
@@ -69,8 +64,8 @@ func (s *Sampler) measureTarget(ctx context.Context, job Job, host string) bool 
 	return true
 }
 
-// measureResolver runs every transport the resolver is configured for. A
-// deadline that lands mid-probe discards that result, like a target's.
+// measureResolver records each configured transport; a deadline mid-probe
+// discards the result.
 func (s *Sampler) measureResolver(ctx context.Context, job Job, resolver config.Resolver) {
 	if ctx.Err() != nil {
 		return

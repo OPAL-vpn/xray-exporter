@@ -1,6 +1,5 @@
-// Package sampler runs one measurement cycle over a set of configs: every
-// target through its tunnel, every configured resolver transport, all recorded
-// into a metrics snapshot.
+// Package sampler runs one measurement cycle over a set of configs and records
+// the results in a metrics snapshot.
 package sampler
 
 import (
@@ -13,18 +12,14 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// Job is one config measured by a cycle: its metric label and the loopback
-// ports its running xray instance listens on.
+// Job is one config's metric label and loopback ports.
 type Job struct {
 	Name      string
 	SocksPort int
 	DNSPort   int
 }
 
-// Options bounds a cycle. Workers is the probe concurrency within one job;
-// ProbeTimeout and ResolverTimeout bound a single probe; Deadline bounds a
-// whole job's cycle. The app always passes half the interval as Deadline, so
-// the zero case (no per-job deadline, parent context only) exists for tests.
+// Options bounds a cycle. Deadline zero means the parent context only.
 type Options struct {
 	Workers         int
 	ProbeTimeout    time.Duration
@@ -33,33 +28,28 @@ type Options struct {
 	ProbeDomain     string
 }
 
-// Probers are the measurement functions a cycle calls. A nil field in New is
-// filled with the real implementation, so a test can replace only what it
-// observes.
+// Probers are the measurement functions; nil fields use the real implementations.
 type Probers struct {
 	HTTP func(ctx context.Context, d probe.Dialer, host string, timeout time.Duration, roots *x509.CertPool) probe.HTTPResult
 	DNS  func(ctx context.Context, server, domain string, timeout time.Duration) probe.DNSResult
 	DoH  func(ctx context.Context, d probe.Dialer, url, domain string, timeout time.Duration, roots *x509.CertPool) probe.ResolverResult
 	DoT  func(ctx context.Context, d probe.Dialer, host, domain string, timeout time.Duration, roots *x509.CertPool) probe.ResolverResult
-	// Dialer builds the dialer every probe leaves through. A test replaces it
-	// to see the address a cycle dials; nil becomes probe.NewSocksDialer.
+	// Dialer builds the dialer every probe leaves through.
 	Dialer DialerFactory
 }
 
-// DialerFactory builds a dialer for the tunnel's loopback socks address. The
-// sampler calls it once per probe kind, so the timeout it passes is the one the
-// probe is bounded by.
+// DialerFactory builds a dialer for the tunnel's socks address.
 type DialerFactory func(addr string, timeout time.Duration) probe.Dialer
 
-// Sampler measures jobs and records their results in a snapshot.
+// Sampler measures jobs into a snapshot.
 type Sampler struct {
 	snap    *metrics.Snapshot
 	probers Probers
 	opts    Options
 }
 
-// New returns a sampler. Nil probers become the real implementations; they are
-// passed system roots (nil) so a tunnel-injected CA is not trusted by accident.
+// New fills nil probers with the real implementations. They use system roots,
+// so a tunnel-injected CA is never trusted.
 func New(snap *metrics.Snapshot, p Probers, o Options) *Sampler {
 	if p.HTTP == nil {
 		p.HTTP = probe.ProbeHTTPS
@@ -79,10 +69,8 @@ func New(snap *metrics.Snapshot, p Probers, o Options) *Sampler {
 	return &Sampler{snap: snap, probers: p, opts: o}
 }
 
-// Cycle measures every job, one job at a time. Within a job targets and then
-// resolvers share a worker pool, and the job's own deadline bounds the whole
-// thing. Results are published as they arrive, so an overrun still leaves the
-// completed measurements visible.
+// Cycle measures every job in turn; within a job, targets and resolvers share a
+// worker pool. Results are published as they arrive.
 func (s *Sampler) Cycle(ctx context.Context, jobs []Job, targets []config.Target, resolvers []config.Resolver) {
 	for _, job := range jobs {
 		s.cycle(ctx, job, targets, resolvers)
