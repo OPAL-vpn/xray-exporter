@@ -18,17 +18,33 @@ const (
 	dialTimeout = 100 * time.Millisecond
 )
 
+// FreePort reserves and releases a loopback port, so the number handed out is
+// neither fixed nor documented.
+func FreePort() (int, error) {
+	ln, err := net.Listen("tcp", netutil.LoopbackHost+":0")
+	if err != nil {
+		return 0, fmt.Errorf("reserve loopback port: %w", err)
+	}
+	defer ln.Close()
+
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("reserve loopback port: got %T", ln.Addr())
+	}
+	return addr.Port, nil
+}
+
 func allocatePorts() (xraycfg.Ports, error) {
-	socks, err := xraycfg.FreePort()
+	socks, err := FreePort()
 	if err != nil {
 		return xraycfg.Ports{}, err
 	}
-	dns, err := xraycfg.FreePort()
+	dns, err := FreePort()
 	if err != nil {
 		return xraycfg.Ports{}, err
 	}
 	if dns == socks {
-		if dns, err = xraycfg.FreePort(); err != nil {
+		if dns, err = FreePort(); err != nil {
 			return xraycfg.Ports{}, err
 		}
 		if dns == socks {

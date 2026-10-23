@@ -3,8 +3,6 @@ package xraycfg_test
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -41,18 +39,12 @@ func TestDiscover(t *testing.T) {
 			t.Errorf("configs[%d].Name = %q, want %q", i, configs[i].Name, want)
 		}
 		wantPath := filepath.Join(dir, want+".json")
-		if configs[i].Path != wantPath {
-			t.Errorf("configs[%d].Path = %q, want %q", i, configs[i].Path, wantPath)
-		}
 		wantRaw, err := os.ReadFile(wantPath)
 		if err != nil {
 			t.Fatalf("read %s: %v", wantPath, err)
 		}
 		if !reflect.DeepEqual(configs[i].Raw, wantRaw) {
 			t.Errorf("configs[%d].Raw = %q, want %q", i, configs[i].Raw, wantRaw)
-		}
-		if configs[i].Ports != (xraycfg.Ports{}) {
-			t.Errorf("configs[%d].Ports = %+v, want zero value", i, configs[i].Ports)
 		}
 	}
 }
@@ -289,20 +281,4 @@ func TestInjectErrors(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestFreePort(t *testing.T) {
-	port, err := xraycfg.FreePort()
-	if err != nil {
-		t.Fatalf("FreePort: %v", err)
-	}
-	if port < 1 || port > 65535 {
-		t.Fatalf("FreePort = %d, want 1-65535", port)
-	}
-
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		t.Fatalf("listen on returned port %d: %v", port, err)
-	}
-	defer ln.Close()
 }

@@ -20,13 +20,10 @@ import (
 var ErrNoConfigs = errors.New("no *.json configs")
 
 // Config is one xray client config found in the config directory. Name is the
-// filename stem, which is the Prometheus label. Ports is left zero by Discover;
-// the caller fills it with the ports it allocated.
+// filename stem, which is the Prometheus label.
 type Config struct {
-	Name  string
-	Path  string
-	Raw   []byte
-	Ports Ports
+	Name string
+	Raw  []byte
 }
 
 // Discover returns every *.json regular file in dir, sorted by name stem. An
@@ -50,7 +47,6 @@ func Discover(dir string) ([]Config, error) {
 		}
 		configs = append(configs, Config{
 			Name: strings.TrimSuffix(entry.Name(), ".json"),
-			Path: path,
 			Raw:  raw,
 		})
 	}

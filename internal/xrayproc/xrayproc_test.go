@@ -2,6 +2,7 @@ package xrayproc_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -381,4 +382,20 @@ func TestManagerApplyKeepsPortsForUnchanged(t *testing.T) {
 			after.SocksPort, after.DNSPort, before.SocksPort, before.DNSPort)
 	}
 	waitDial(t, after.SocksPort, 2*time.Second)
+}
+
+func TestFreePort(t *testing.T) {
+	port, err := xrayproc.FreePort()
+	if err != nil {
+		t.Fatalf("FreePort: %v", err)
+	}
+	if port < 1 || port > 65535 {
+		t.Fatalf("FreePort = %d, want 1-65535", port)
+	}
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatalf("listen on returned port %d: %v", port, err)
+	}
+	defer ln.Close()
 }
