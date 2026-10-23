@@ -29,6 +29,9 @@ type fakeProbers struct {
 	dohCalls  []resolverCall
 	dotCalls  []resolverCall
 
+	httpDialers     []probe.Dialer
+	resolverDialers []probe.Dialer
+
 	httpResult     probe.HTTPResult
 	dnsResult      probe.DNSResult
 	resolverResult probe.ResolverResult
@@ -53,12 +56,13 @@ func (f *fakeProbers) probers() Probers {
 	return Probers{HTTP: f.http, DNS: f.dns, DoH: f.doh, DoT: f.dot}
 }
 
-func (f *fakeProbers) http(ctx context.Context, _ probe.Dialer, host string, _ time.Duration, _ *x509.CertPool) probe.HTTPResult {
+func (f *fakeProbers) http(ctx context.Context, d probe.Dialer, host string, _ time.Duration, _ *x509.CertPool) probe.HTTPResult {
 	f.enter()
 	defer f.leave()
 
 	f.mu.Lock()
 	f.httpHosts = append(f.httpHosts, host)
+	f.httpDialers = append(f.httpDialers, d)
 	f.mu.Unlock()
 
 	if !sleep(ctx, f.httpDelay) {
@@ -81,23 +85,25 @@ func (f *fakeProbers) dns(ctx context.Context, server, domain string, _ time.Dur
 	return f.dnsResult
 }
 
-func (f *fakeProbers) doh(ctx context.Context, _ probe.Dialer, url, domain string, _ time.Duration, _ *x509.CertPool) probe.ResolverResult {
+func (f *fakeProbers) doh(ctx context.Context, d probe.Dialer, url, domain string, _ time.Duration, _ *x509.CertPool) probe.ResolverResult {
 	f.enter()
 	defer f.leave()
 
 	f.mu.Lock()
 	f.dohCalls = append(f.dohCalls, resolverCall{addr: url, domain: domain})
+	f.resolverDialers = append(f.resolverDialers, d)
 	f.mu.Unlock()
 
 	return f.resolverResult
 }
 
-func (f *fakeProbers) dot(ctx context.Context, _ probe.Dialer, host, domain string, _ time.Duration, _ *x509.CertPool) probe.ResolverResult {
+func (f *fakeProbers) dot(ctx context.Context, d probe.Dialer, host, domain string, _ time.Duration, _ *x509.CertPool) probe.ResolverResult {
 	f.enter()
 	defer f.leave()
 
 	f.mu.Lock()
 	f.dotCalls = append(f.dotCalls, resolverCall{addr: host, domain: domain})
+	f.resolverDialers = append(f.resolverDialers, d)
 	f.mu.Unlock()
 
 	return f.resolverResult
@@ -274,6 +280,62 @@ func TestCycleSeedsAndMeasures(t *testing.T) {
 	}
 	if got := mustValue(t, values, "xray_cycle_timestamp_seconds", "config", "nl1"); got <= float64(seedTime.Unix()) {
 		t.Errorf("xray_cycle_timestamp_seconds = %v, want after %v", got, seedTime.Unix())
+	}
+}
+
+func TestCycleBuildsSocksDialerFromJob(t *testing.T) {
+	const socksPort = 1080
+
+	snap := metrics.New()
+	snap.Seed("nl1", []string{"a.test"}, []config.Resolver{
+		{Name: "cf", DoHURL: "https://cf.test/dns-query"},
+	}, seedTime)
+
+	fake := &fakeProbers{
+		httpResult:     probe.HTTPResult{Up: true, Status: 200},
+		dnsResult:      probe.DNSResult{Up: true, RTT: time.Millisecond},
+		resolverResult: probe.ResolverResult{Up: true, RTT: time.Millisecond},
+	}
+
+	var (
+		addresses []string
+		built     []probe.Dialer
+	)
+	p := fake.probers()
+	p.Dialer = func(addr string, timeout time.Duration) probe.Dialer {
+		d := probe.NewSocksDialer(addr, timeout)
+		addresses = append(addresses, addr)
+		built = append(built, d)
+		return d
+	}
+	s := New(snap, p, testOptions("example.com"))
+
+	s.Cycle(context.Background(),
+		[]Job{{Name: "nl1", SocksPort: socksPort, DNSPort: 5353}},
+		[]config.Target{{Host: "a.test"}},
+		[]config.Resolver{{Name: "cf", DoHURL: "https://cf.test/dns-query"}},
+	)
+
+	want := loopback(socksPort)
+	if len(addresses) != 2 {
+		t.Fatalf("dialer factory called %d times (%v), want 2: one target and one resolver dialer", len(addresses), addresses)
+	}
+	for _, addr := range addresses {
+		if addr != want {
+			t.Errorf("dialer factory address = %q, want %q", addr, want)
+		}
+	}
+
+	fake.mu.Lock()
+	httpDialers := append([]probe.Dialer(nil), fake.httpDialers...)
+	resolverDialers := append([]probe.Dialer(nil), fake.resolverDialers...)
+	fake.mu.Unlock()
+
+	if len(httpDialers) != 1 || httpDialers[0] != built[0] {
+		t.Errorf("HTTPS prober got %v, want the factory-built dialer", httpDialers)
+	}
+	if len(resolverDialers) != 1 || resolverDialers[0] != built[1] {
+		t.Errorf("resolver prober got %v, want the factory-built dialer", resolverDialers)
 	}
 }
 

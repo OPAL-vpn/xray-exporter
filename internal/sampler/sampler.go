@@ -46,7 +46,15 @@ type Probers struct {
 	DNS  func(ctx context.Context, server, domain string, timeout time.Duration) probe.DNSResult
 	DoH  func(ctx context.Context, d probe.Dialer, url, domain string, timeout time.Duration, roots *x509.CertPool) probe.ResolverResult
 	DoT  func(ctx context.Context, d probe.Dialer, host, domain string, timeout time.Duration, roots *x509.CertPool) probe.ResolverResult
+	// Dialer builds the dialer every probe leaves through. A test replaces it
+	// to see the address a cycle dials; nil becomes probe.NewSocksDialer.
+	Dialer DialerFactory
 }
+
+// DialerFactory builds a dialer for the tunnel's loopback socks address. The
+// sampler calls it once per probe kind, so the timeout it passes is the one the
+// probe is bounded by.
+type DialerFactory func(addr string, timeout time.Duration) probe.Dialer
 
 // Sampler measures jobs and records their results in a snapshot.
 type Sampler struct {
@@ -69,6 +77,9 @@ func New(snap *metrics.Snapshot, p Probers, o Options) *Sampler {
 	}
 	if p.DoT == nil {
 		p.DoT = probe.ProbeDoT
+	}
+	if p.Dialer == nil {
+		p.Dialer = probe.NewSocksDialer
 	}
 	return &Sampler{snap: snap, probers: p, opts: o}
 }
@@ -123,7 +134,7 @@ func (s *Sampler) measureTarget(ctx context.Context, job Job, host string) bool 
 		s.snap.SetDNS(job.Name, host, r, time.Now())
 	}
 
-	d := probe.NewSocksDialer(loopback(job.SocksPort), s.opts.ProbeTimeout)
+	d := s.probers.Dialer(loopback(job.SocksPort), s.opts.ProbeTimeout)
 	r := s.probers.HTTP(ctx, d, host, s.opts.ProbeTimeout, nil)
 	if ctx.Err() != nil {
 		return true
@@ -139,7 +150,7 @@ func (s *Sampler) measureResolver(ctx context.Context, job Job, resolver config.
 		return
 	}
 
-	d := probe.NewSocksDialer(loopback(job.SocksPort), s.opts.ResolverTimeout)
+	d := s.probers.Dialer(loopback(job.SocksPort), s.opts.ResolverTimeout)
 	if resolver.DoHURL != "" {
 		r := s.probers.DoH(ctx, d, resolver.DoHURL, s.opts.ProbeDomain, s.opts.ResolverTimeout, nil)
 		if ctx.Err() == nil {
