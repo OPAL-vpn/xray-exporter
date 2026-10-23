@@ -35,7 +35,7 @@ type DNSResult struct {
 // query leaves through the tunnel. An address literal has nothing to resolve
 // and is rejected before a packet is sent.
 func ProbeTunnelDNS(ctx context.Context, server, domain string, timeout time.Duration) DNSResult {
-	name := hostOnly(domain)
+	name := HostOnly(domain)
 	if net.ParseIP(name) != nil {
 		return DNSResult{Err: fmt.Errorf("%w: %s", ErrIPLiteral, name)}
 	}

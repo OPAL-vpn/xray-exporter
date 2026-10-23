@@ -14,10 +14,10 @@ func newQuery(name string) *dns.Msg {
 	return query
 }
 
-// hostOnly returns the name a DNS query asks for: the host without its /path
+// HostOnly returns the name a DNS query asks for: the host without its /path
 // and without the brackets an IPv6 literal carries in a URL, so
 // "example.com/health" is queried as "example.com" and "[::1]/x" as "::1".
-func hostOnly(host string) string {
+func HostOnly(host string) string {
 	host = strings.TrimSpace(host)
 	if i := strings.IndexByte(host, '/'); i >= 0 {
 		host = host[:i]

@@ -24,7 +24,7 @@ func ProbeDoT(ctx context.Context, d Dialer, dotHost, domain string, timeout tim
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	query := newQuery(hostOnly(domain))
+	query := newQuery(HostOnly(domain))
 	packed, err := query.Pack()
 	if err != nil {
 		return ResolverResult{Err: fmt.Errorf("dot query pack: %w", err)}

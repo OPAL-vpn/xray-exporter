@@ -29,7 +29,7 @@ func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	query := newQuery(hostOnly(domain))
+	query := newQuery(HostOnly(domain))
 	packed, err := query.Pack()
 	if err != nil {
 		return ResolverResult{Err: fmt.Errorf("doh query pack: %w", err)}
