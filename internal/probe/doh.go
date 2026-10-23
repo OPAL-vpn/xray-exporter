@@ -13,18 +13,14 @@ import (
 	"github.com/miekg/dns"
 )
 
-// dnsContentType is the wire format DoH carries, RFC 8484.
+// dnsContentType is the DoH wire format, RFC 8484.
 const dnsContentType = "application/dns-message"
 
-// maxDNSMessageSize bounds a read from the wire: a DNS message cannot be
-// longer, so a larger read is not a message.
+// maxDNSMessageSize bounds a DNS message read from the wire.
 const maxDNSMessageSize = 65535
 
-// ProbeDoH POSTs an A query for domain to dohURL through d. A resolver is up
-// only when it answers with 200, an application/dns-message body, a message
-// that unpacks, and our own message ID: an error page or a cached reply from
-// another query is not a resolver. roots overrides the system roots when
-// non-nil.
+// ProbeDoH POSTs an A query through d. A resolver is up only for a 200 with an
+// application/dns-message body that unpacks and carries our message ID.
 func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time.Duration, roots *x509.CertPool) ResolverResult {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -52,8 +48,7 @@ func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time
 	}
 	defer resp.Body.Close()
 
-	// Reading the body to the end is what makes RTT the full exchange; the
-	// request context bounds a body that never finishes.
+	// Read the body to the end so RTT covers the full exchange.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDNSMessageSize))
 	if err != nil {
 		return ResolverResult{Err: fmt.Errorf("doh read: %w", err)}

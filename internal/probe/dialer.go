@@ -1,5 +1,5 @@
-// Package probe measures targets through a config's tunnel: a SOCKS5 dialer
-// that leaves hostname resolution to the proxy, and an HTTPS probe built on it.
+// Package probe measures targets through a config's tunnel: a SOCKS5 dialer,
+// HTTPS probes, and DNS probes over UDP, DoH and DoT.
 package probe
 
 import (
@@ -37,13 +37,8 @@ type socksDialer struct {
 	dialer  net.Dialer
 }
 
-// DialContext ignores network and always opens a TCP connection: the probes
-// only carry HTTP and TLS, and SOCKS5 CONNECT is TCP-only.
-
-// NewSocksDialer returns a Dialer that reaches targets through the SOCKS5 proxy
-// at addr. The target hostname is sent to the proxy unresolved (socks5h), so
-// DNS happens on the far side of the tunnel; that is the property the probes
-// exist to measure. Handshake failures name the stage they happened in.
+// NewSocksDialer reaches targets through the SOCKS5 proxy at addr. The hostname
+// is sent unresolved (socks5h), so DNS happens beyond the tunnel.
 func NewSocksDialer(addr string, timeout time.Duration) Dialer {
 	return &socksDialer{
 		addr:    addr,
@@ -52,6 +47,7 @@ func NewSocksDialer(addr string, timeout time.Duration) Dialer {
 	}
 }
 
+// DialContext always opens TCP; the probes carry only HTTP and TLS.
 func (d *socksDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -88,7 +84,7 @@ func (d *socksDialer) DialContext(ctx context.Context, network, addr string) (ne
 }
 
 // handshakeDeadline bounds the greeting and CONNECT exchange by whichever of
-// the dialer timeout and the caller's context expires first.
+// the timeout and the context expires first.
 func (d *socksDialer) handshakeDeadline(ctx context.Context) (time.Time, bool) {
 	var deadline time.Time
 	if d.timeout > 0 {
@@ -100,9 +96,8 @@ func (d *socksDialer) handshakeDeadline(ctx context.Context) (time.Time, bool) {
 	return deadline, !deadline.IsZero()
 }
 
-// socksConnect performs the no-auth greeting and one CONNECT request. The host
-// is passed through verbatim: a name goes out as ATYP=3 and is never resolved
-// here.
+// socksConnect performs the no-auth greeting and one CONNECT. Host is passed
+// verbatim: a name goes out as ATYP=3 and is never resolved here.
 func socksConnect(conn net.Conn, host string, port uint16) error {
 	if _, err := conn.Write([]byte{socksVersion, 1, socksNoAuth}); err != nil {
 		return fmt.Errorf("socks handshake: %w", err)
@@ -138,8 +133,7 @@ func socksConnect(conn net.Conn, host string, port uint16) error {
 		return fmt.Errorf("socks connect: reply %d", reply[1])
 	}
 
-	// The reply carries the bound address; read past it so the caller sees only
-	// the relayed payload.
+	// Skip the bound address so the caller sees only the relayed payload.
 	switch reply[3] {
 	case socksATYPIPv4:
 		err = discard(conn, 4)
@@ -163,8 +157,6 @@ func socksConnect(conn net.Conn, host string, port uint16) error {
 	return nil
 }
 
-// connectRequest builds a CONNECT for host, choosing the address type from the
-// literal form of host.
 func connectRequest(host string, port uint16) ([]byte, error) {
 	request := []byte{socksVersion, socksCmdConnect, 0x00}
 

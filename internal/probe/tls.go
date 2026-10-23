@@ -6,10 +6,8 @@ import (
 	"errors"
 )
 
-// verifyPeer checks the peer chain against roots and then the leaf against
-// name, which may be a DNS name or an address literal. Both checks matter: a
-// chain that reaches a trusted root says nothing about who the certificate was
-// issued to.
+// verifyPeer checks both the chain and the leaf name; a trusted chain says
+// nothing about who the certificate was issued to.
 func verifyPeer(state tls.ConnectionState, roots *x509.CertPool, name string) error {
 	if len(state.PeerCertificates) == 0 {
 		return errors.New("no peer certificate")

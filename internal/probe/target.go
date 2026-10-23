@@ -6,9 +6,7 @@ import (
 	"strings"
 )
 
-// probeURL turns a target host into the request URL. A host is a name or a
-// bracketed address with an optional path, so the scheme and the root path are
-// the probe's own; a scheme in the host is the config error Load rejects.
+// probeURL builds the https URL for a target and rejects a supplied scheme.
 func probeURL(host string) (*url.URL, error) {
 	raw := strings.TrimSpace(host)
 	if strings.Contains(raw, "://") {

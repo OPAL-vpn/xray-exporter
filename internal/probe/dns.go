@@ -10,30 +10,23 @@ import (
 	"github.com/miekg/dns"
 )
 
-// ErrIPLiteral reports a DNS probe target that is already an address literal:
-// there is nothing to look up, so the probe would measure a tautology.
+// ErrIPLiteral reports a DNS probe target that is already an address literal.
 var ErrIPLiteral = errors.New("ip literal")
 
-// dnsUDPMessageSize is the read buffer for one tunnel lookup. The query carries
-// no EDNS0 option, so the answer is a single small datagram; anything larger
-// than this is not a reply to it.
+// dnsUDPMessageSize is the read buffer for one lookup; the query has no EDNS0
+// option, so a larger datagram is not a reply to it.
 const dnsUDPMessageSize = 4096
 
 // DNSResult is the outcome of one tunnel DNS lookup.
 type DNSResult struct {
-	// Up is true when a DNS message came back and unpacked, whatever its rcode:
-	// NXDOMAIN still proves the resolver answered.
-	Up bool
-	// RTT is the round trip to the reply, 0 when nothing answered.
+	// Up is true when a DNS message came back and unpacked, whatever its rcode.
+	Up  bool
 	RTT time.Duration
-	// Err is why the lookup did not produce an answer, nil when Up.
 	Err error
 }
 
-// ProbeTunnelDNS sends an A query for domain to the UDP resolver at server and
-// waits for the reply. server is the config's dokodemo-door inbound, so the
-// query leaves through the tunnel. An address literal has nothing to resolve
-// and is rejected before a packet is sent.
+// ProbeTunnelDNS sends an A query through the config's dokodemo-door inbound
+// and waits for the reply. An address literal is rejected before sending.
 func ProbeTunnelDNS(ctx context.Context, server, domain string, timeout time.Duration) DNSResult {
 	name := HostOnly(domain)
 	if net.ParseIP(name) != nil {

@@ -16,10 +16,8 @@ import (
 // dotPort is the IANA port for DNS over TLS, RFC 7858.
 const dotPort = "853"
 
-// ProbeDoT queries domain over TLS to dotHost:853 through d, with dotHost as
-// the SNI name: the name is resolved on the far side of the tunnel, which is
-// the property being measured. roots overrides the system roots when non-nil.
-// The exchange is length-prefixed as RFC 7858 requires.
+// ProbeDoT queries through d over TLS, using dotHost as the SNI name so the
+// name is resolved beyond the tunnel.
 func ProbeDoT(ctx context.Context, d Dialer, dotHost, domain string, timeout time.Duration, roots *x509.CertPool) ResolverResult {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
