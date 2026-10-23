@@ -83,7 +83,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance) (xray_config_running)",
+          "expr": "sum by (instance) (xray_config_running{instance=~\"$instance\"})",
           "refId": "A",
           "legendFormat": "{{instance}}",
           "instant": true,
@@ -145,7 +145,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance) (xray_egress_verified)",
+          "expr": "sum by (instance) (xray_egress_verified{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "A",
           "legendFormat": "{{instance}}",
           "instant": true,
@@ -211,7 +211,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "time() - max by (instance, config) (xray_cycle_timestamp_seconds)",
+          "expr": "time() - max by (instance, config) (xray_cycle_timestamp_seconds{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "A",
           "legendFormat": "{{instance}} {{config}}",
           "instant": true,
@@ -1265,7 +1265,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(xray_exporter_config_reload_errors_total[5m])",
+          "expr": "rate(xray_exporter_config_reload_errors_total{instance=~\"$instance\"}[5m])",
           "refId": "A",
           "legendFormat": "{{instance}}"
         }

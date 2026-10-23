@@ -6,14 +6,20 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
 // dashboardPath is the dashboard the README points at.
 const dashboardPath = "../../deploy/grafana/dashboard.json"
 
-// dashboardMetricRef matches a Prometheus metric name inside a PromQL expr.
+// dashboardMetricRef matches a Prometheus metric name inside a PromQL string.
 var dashboardMetricRef = regexp.MustCompile(`\b(xray_[a-z0-9_]+)\b`)
+
+// dashboardPromQLKeys are the keys that hold a PromQL string: panel targets use
+// "expr", template variables repeat the same query in "query" and
+// "definition", so a metric rename can drift there too.
+var dashboardPromQLKeys = []string{"definition", "expr", "query"}
 
 // dashboardDoc is the part of Grafana's dashboard model the drift test reads.
 type dashboardDoc struct {
@@ -64,25 +70,47 @@ func TestDashboardMetricsExist(t *testing.T) {
 	if err := json.Unmarshal(raw, &document); err != nil {
 		t.Fatalf("parse dashboard document: %v", err)
 	}
-	exprs, panels := dashboardPanels(document)
+	exprs, panelExprs, panels := dashboardPanels(document)
 	if panels < 10 {
 		t.Errorf("dashboard has %d panels, want at least 10", panels)
 	}
 	if len(exprs) == 0 {
-		t.Fatal("dashboard has no panel expressions")
+		t.Fatal("dashboard has no PromQL strings")
 	}
 	if unknown := unknownDashboardMetrics(exprs); len(unknown) > 0 {
 		t.Errorf("dashboard references metrics the exporter does not register: %v", unknown)
 	}
+	if unscoped := unscopedPanelExprs(panelExprs); len(unscoped) > 0 {
+		t.Errorf("panel expressions ignore the $instance variable: %v", unscoped)
+	}
 
 	t.Run("an unregistered metric is reported", func(t *testing.T) {
-		var synthetic any
-		if err := json.Unmarshal([]byte(`{"panels":[{"type":"timeseries","targets":[{"expr":"rate(xray_not_a_metric_total[5m])"}]}]}`), &synthetic); err != nil {
+		synthetic := `{
+			"panels": [{"type": "timeseries", "targets": [{"expr": "rate(xray_not_a_metric_total[5m])"}]}],
+			"templating": {"list": [{"name": "instance", "type": "query", "query": "label_values(xray_not_a_metric_series, instance)", "definition": "label_values(xray_not_a_metric_series, instance)"}]}
+		}`
+		var document any
+		if err := json.Unmarshal([]byte(synthetic), &document); err != nil {
 			t.Fatalf("parse synthetic dashboard: %v", err)
 		}
-		exprs, _ := dashboardPanels(synthetic)
-		if unknown := unknownDashboardMetrics(exprs); !slices.Contains(unknown, "xray_not_a_metric_total") {
-			t.Errorf("drift check did not flag xray_not_a_metric_total, got %v", unknown)
+		exprs, _, _ := dashboardPanels(document)
+		unknown := unknownDashboardMetrics(exprs)
+		for _, want := range []string{"xray_not_a_metric_total", "xray_not_a_metric_series"} {
+			if !slices.Contains(unknown, want) {
+				t.Errorf("drift check did not flag %s, got %v", want, unknown)
+			}
+		}
+	})
+
+	t.Run("an unscoped panel is reported", func(t *testing.T) {
+		synthetic := []byte(`{"panels": [{"type": "stat", "targets": [{"expr": "sum by (instance) (xray_config_running)"}]}]}`)
+		var document any
+		if err := json.Unmarshal(synthetic, &document); err != nil {
+			t.Fatalf("parse synthetic dashboard: %v", err)
+		}
+		_, panelExprs, _ := dashboardPanels(document)
+		if unscoped := unscopedPanelExprs(panelExprs); len(unscoped) != 1 {
+			t.Errorf("scoping check did not flag the unscoped panel, got %v", unscoped)
 		}
 	})
 }
@@ -146,20 +174,47 @@ func unknownDashboardMetrics(exprs []string) []string {
 	return unknown
 }
 
-// dashboardPanels returns every panel expression and how many panels hold
-// targets. Rows carry no targets, so they do not count.
-func dashboardPanels(document any) (exprs []string, panels int) {
-	for _, obj := range dashboardObjects(document, nil) {
-		if expr, ok := obj["expr"].(string); ok {
-			exprs = append(exprs, expr)
+// unscopedPanelExprs returns every panel expression that does not filter on
+// $instance, so a panel that shows all instances at once fails the test.
+func unscopedPanelExprs(exprs []string) []string {
+	var unscoped []string
+	for _, expr := range exprs {
+		if !strings.Contains(expr, "$instance") {
+			unscoped = append(unscoped, expr)
 		}
-		if _, ok := obj["targets"].([]any); ok {
-			if kind, _ := obj["type"].(string); kind != "" && kind != "row" {
-				panels++
+	}
+	return unscoped
+}
+
+// dashboardPanels returns every PromQL string in the document, the subset held
+// by panel targets, and how many panels hold targets. Rows carry no targets, so
+// they do not count.
+func dashboardPanels(document any) (exprs, panelExprs []string, panels int) {
+	for _, obj := range dashboardObjects(document, nil) {
+		for _, key := range dashboardPromQLKeys {
+			if query, ok := obj[key].(string); ok {
+				exprs = append(exprs, query)
+			}
+		}
+
+		targets, ok := obj["targets"].([]any)
+		if !ok {
+			continue
+		}
+		if kind, _ := obj["type"].(string); kind != "" && kind != "row" {
+			panels++
+		}
+		for _, target := range targets {
+			targetObj, ok := target.(map[string]any)
+			if !ok {
+				continue
+			}
+			if expr, ok := targetObj["expr"].(string); ok {
+				panelExprs = append(panelExprs, expr)
 			}
 		}
 	}
-	return exprs, panels
+	return exprs, panelExprs, panels
 }
 
 // dashboardObjects flattens every JSON object in the document, visiting keys in
