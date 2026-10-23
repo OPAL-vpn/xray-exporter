@@ -65,17 +65,32 @@ real deployments rather than on a schedule.
    ```
 
 4. `release.yml` builds the multi-arch image and pushes `:vX.Y.Z` and `:latest`.
+5. Once the image job is green, publish the release entry:
+
+   ```bash
+   gh release create vX.Y.Z --title vX.Y.Z --notes-file notes.md --latest
+   ```
+
+   The notes carry what a deployment would notice, the supported platforms and
+   the multi-arch manifest digest from the build log (the
+   `pushing manifest for …:vX.Y.Z@sha256:…` line), so the pin is discoverable
+   without opening the registry.
 
 The `v` prefix is load-bearing: the workflow triggers on `v*` only, so a tag
-without it produces no image. There is no changelog file and no generated
-release body — the annotated tag and the commit history are the record, which is
-why step 3 carries the summary.
+without it produces no image. The tag alone does **not** create an entry on the
+Releases page — only step 5 does — so skipping it publishes an image that nobody
+browsing releases can find.
+
+There is no `CHANGELOG.md`. The GitHub Release body is the changelog for a
+version, and the annotated tag repeats its summary, so steps 3 and 5 are both
+written by hand. `release.yml` only builds the image.
 
 ## Tags on the image
 
 `:latest` follows the newest release, whatever its major. Pin `:vX.Y.Z`, or the
 digest it resolves to, wherever a rollover would be a surprise — the README's
-install snippet pins a tag for exactly that reason.
+install snippet pins a tag for exactly that reason, and each release body records
+the manifest digest that tag resolved to when it was published.
 
 ## What the version does not describe
 
