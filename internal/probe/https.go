@@ -4,18 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptrace"
-	"net/url"
-	"strings"
 	"time"
 )
-
-// UserAgent is the fixed user agent every request the exporter sends, so a
-// probe looks the same from every vantage point.
-const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
 // HTTPResult is the outcome of one HTTPS probe.
 type HTTPResult struct {
@@ -33,33 +26,6 @@ type HTTPResult struct {
 	Total time.Duration
 	// Err is the transport error, if the request never produced a response.
 	Err error
-}
-
-// HTTPClient returns the HTTP client the package shares: connections go
-// through d, keep-alives are off, redirects come back as responses, and the
-// leaf is verified against the host of the requested URL, whether that is a
-// DNS name or an address literal (VerifyHostname matches IP SANs). roots
-// overrides the system roots when non-nil.
-//
-// The transport derives that name from the URL it is dialing, so verification
-// does not depend on the connection state: Go sends no SNI for an address
-// literal, and the state carries no other copy of the name. ProbeHTTPS
-// replaces the callback to keep the handshake and record a verdict instead of
-// failing the request.
-func HTTPClient(d Dialer, timeout time.Duration, roots *x509.CertPool) *http.Client {
-	transport := &http.Transport{
-		DialContext:       d.DialContext,
-		DisableKeepAlives: true,
-		TLSClientConfig:   &tls.Config{RootCAs: roots},
-	}
-
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
 }
 
 // ProbeHTTPS issues GET https://<host>/ through d and reports what came back.
@@ -126,55 +92,4 @@ func ProbeHTTPS(ctx context.Context, d Dialer, host string, timeout time.Duratio
 		TTFB:        ttfb,
 		Total:       time.Since(start),
 	}
-}
-
-// probeURL turns a target host into the request URL. A host is a name or a
-// bracketed address with an optional path, so the scheme and the root path are
-// the probe's own; a scheme in the host is the config error Load rejects.
-func probeURL(host string) (*url.URL, error) {
-	raw := strings.TrimSpace(host)
-	if strings.Contains(raw, "://") {
-		return nil, errors.New("probe: host must not include a scheme")
-	}
-
-	target, err := url.Parse("https://" + raw)
-	if err != nil {
-		return nil, err
-	}
-	if target.Host == "" {
-		return nil, errors.New("probe: empty host")
-	}
-	if target.Path == "" {
-		target.Path = "/"
-	}
-
-	return target, nil
-}
-
-// verifyPeer checks the peer chain against roots and then the leaf against
-// name, which may be a DNS name or an address literal. Both checks matter: a
-// chain that reaches a trusted root says nothing about who the certificate was
-// issued to.
-func verifyPeer(state tls.ConnectionState, roots *x509.CertPool, name string) error {
-	if len(state.PeerCertificates) == 0 {
-		return errors.New("no peer certificate")
-	}
-
-	leaf := state.PeerCertificates[0]
-	intermediates := x509.NewCertPool()
-	for _, cert := range state.PeerCertificates[1:] {
-		intermediates.AddCert(cert)
-	}
-
-	if _, err := leaf.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-	}); err != nil {
-		return err
-	}
-	if name == "" {
-		return errors.New("no name to verify the certificate against")
-	}
-
-	return leaf.VerifyHostname(name)
 }
