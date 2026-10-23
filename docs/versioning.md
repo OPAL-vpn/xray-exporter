@@ -57,33 +57,35 @@ real deployments rather than on a schedule.
 1. Merge the work with Conventional Commit messages.
 2. Take the bump from the commit types, or from the change to the public API
    when the two disagree.
-3. Tag and push:
+3. Tag and push, with the summary a deployment would notice in the annotation:
 
    ```bash
-   git tag -a vX.Y.Z -m "vX.Y.Z" -m "what changed that a deployment would notice"
+   git tag -a vX.Y.Z -m "vX.Y.Z" -m "XRAY_LOG_FILE is now bounded; set XRAY_LOG_MAX_BYTES=0 to opt out"
    git push origin vX.Y.Z
    ```
 
-4. `release.yml` builds the multi-arch image and pushes `:vX.Y.Z` and `:latest`.
-5. Once the image job is green, publish the release entry:
+4. `release.yml` finishes it, in two jobs:
+   - `image` builds and pushes `:vX.Y.Z` and `:latest` for `linux/amd64` and
+     `linux/arm64`, and surfaces the multi-arch manifest digest as a job output.
+   - `release`, once that succeeds, creates the GitHub Release: the tag's
+     annotation body, then a `## Container image` block with the pull line, the
+     platforms and the digest.
 
-   ```bash
-   gh release create vX.Y.Z --title vX.Y.Z --notes-file notes.md --latest
-   ```
+Pushing the tag is the only manual step, and the `v` prefix is load-bearing: the
+workflow triggers on `v*`, so a tag without it publishes nothing. Re-running the
+`release` job edits the existing entry rather than failing on the duplicate, so a
+corrected note needs a re-run, not a new tag. The image job holds
+`packages: write` and the release job holds `contents: write`; neither gets the
+other's scope.
 
-   The notes carry what a deployment would notice, the supported platforms and
-   the multi-arch manifest digest from the build log (the
-   `pushing manifest for …:vX.Y.Z@sha256:…` line), so the pin is discoverable
-   without opening the registry.
+The annotation is the release body, so write it for whoever runs the image, not
+for a reader of `git log`. Keep its first line to the version: the body is
+published and the title already carries the tag. A signed tag keeps its
+signature; only `contents:body` is read, so the signature never lands in the
+notes.
 
-The `v` prefix is load-bearing: the workflow triggers on `v*` only, so a tag
-without it produces no image. The tag alone does **not** create an entry on the
-Releases page — only step 5 does — so skipping it publishes an image that nobody
-browsing releases can find.
-
-There is no `CHANGELOG.md`. The GitHub Release body is the changelog for a
-version, and the annotated tag repeats its summary, so steps 3 and 5 are both
-written by hand. `release.yml` only builds the image.
+There is no `CHANGELOG.md`. The annotation, and the Release body built from it,
+are the changelog for a version.
 
 ## Tags on the image
 
