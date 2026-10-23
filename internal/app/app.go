@@ -316,10 +316,11 @@ func (a *application) logProbes(exp metrics.Export, jobs []sampler.Job) {
 	}
 }
 
-// logProbe writes one probe outcome. probe names the measurement — the resolver
-// transport for a resolver — so two probes of one entity stay distinguishable.
-func (a *application) logProbe(probe, config, entity, name string, up bool, err error) {
-	attrs := []any{"config", config, "probe", probe, entity, name}
+// logProbe writes one probe outcome. kind names the measurement — the resolver
+// transport for a resolver — so two probes of one entity stay distinguishable,
+// and label is the entity key, "target" or "resolver".
+func (a *application) logProbe(kind, config, label, name string, up bool, err error) {
+	attrs := []any{"config", config, "probe", kind, label, name}
 	if up {
 		a.logger.Debug("probe succeeded", attrs...)
 		return
