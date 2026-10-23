@@ -23,6 +23,10 @@ RUN apk add --no-cache curl unzip \
  && mkdir -p /geo && unzip -p /tmp/x.zip geoip.dat > /geo/geoip.dat && unzip -p /tmp/x.zip geosite.dat > /geo/geosite.dat
 
 FROM gcr.io/distroless/static-debian13:nonroot
+LABEL org.opencontainers.image.source="https://github.com/OPAL-vpn/xray-exporter" \
+      org.opencontainers.image.title="xray-exporter" \
+      org.opencontainers.image.description="Prometheus exporter that probes Xray client configs through their own tunnels" \
+      org.opencontainers.image.licenses="MIT"
 COPY --from=build /out/xray-exporter /usr/local/bin/xray-exporter
 COPY --from=geo /geo/ /usr/local/share/xray/
 ENV XRAY_LOCATION_ASSET=/usr/local/share/xray
