@@ -267,6 +267,12 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 
 	start := time.Now()
 	s.Cycle(ctx, jobs, targets, resolvers)
+	if ctx.Err() != nil {
+		// A reload or shutdown cut this pass short. The configs it never reached
+		// still carry the previous pass's records, so neither a completion nor an
+		// overrun can be attributed to them.
+		return
+	}
 	elapsed := time.Since(start)
 
 	for _, cfg := range a.snap.Export().Configs {
@@ -316,22 +322,12 @@ func (a *application) interruptCycle() {
 // serve starts the HTTP listener and the signal loop. SIGHUP reloads; SIGTERM
 // and SIGINT stop the cycle, the listener and the instances.
 func (a *application) serve(ctx context.Context) error {
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(a.snap.Collector())
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, "ok")
-	})
-
 	listener, err := net.Listen("tcp", a.env.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", a.env.ListenAddr, err)
 	}
 
-	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Handler: a.handler(), ReadHeaderTimeout: 5 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
 	a.logger.Info("metrics server listening", "addr", listener.Addr().String())
@@ -376,6 +372,22 @@ func (a *application) serve(ctx context.Context) error {
 			return fmt.Errorf("serve %s: %w", a.env.ListenAddr, err)
 		}
 	}
+}
+
+// handler builds the routes the listener serves: the Prometheus scrape endpoint
+// over the snapshot and a liveness probe. It is separate from serve so the
+// wiring can be exercised without binding a port.
+func (a *application) handler() http.Handler {
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(a.snap.Collector())
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, "ok")
+	})
+	return mux
 }
 
 // stop ends the in-flight cycle, closes every xray instance and shuts the
@@ -427,10 +439,17 @@ func (a *application) reload(ctx context.Context) {
 		}
 	}
 
-	if discovered, err := xraycfg.Discover(a.env.ConfigDir); err != nil {
+	discovered, err := xraycfg.Discover(a.env.ConfigDir)
+	switch {
+	case errors.Is(err, xraycfg.ErrNoConfigs):
+		// The directory was read and is empty, so it is authoritative: every
+		// config left it, and their instances and series go with them.
+		a.configs = nil
+		a.logger.Info("reload: config directory empty, stopping every config")
+	case err != nil:
 		applied = false
 		a.logger.Error("reload: config directory rejected, keeping previous", "error", err)
-	} else {
+	default:
 		a.configs = discovered
 	}
 

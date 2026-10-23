@@ -35,6 +35,12 @@ type Upstream struct {
 	Port int
 }
 
+// ErrNoConfigs reports a config directory that was read successfully but holds
+// no *.json file. It is not a read failure: the directory answered, so the empty
+// set is authoritative and the caller must stop every instance instead of
+// keeping the previous ones.
+var ErrNoConfigs = errors.New("no *.json configs")
+
 // Config is one xray client config found in the config directory. Name is the
 // filename stem, which is the Prometheus label. Ports is left zero by Discover;
 // the caller fills it with the ports it allocated.
@@ -45,7 +51,9 @@ type Config struct {
 	Ports Ports
 }
 
-// Discover returns every *.json regular file in dir, sorted by name stem.
+// Discover returns every *.json regular file in dir, sorted by name stem. An
+// unreadable directory fails with its own error; a readable directory with no
+// configs fails with ErrNoConfigs, which the caller treats as an empty set.
 func Discover(dir string) ([]Config, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -69,7 +77,7 @@ func Discover(dir string) ([]Config, error) {
 		})
 	}
 	if len(configs) == 0 {
-		return nil, fmt.Errorf("%s: no *.json configs", dir)
+		return nil, fmt.Errorf("%s: %w", dir, ErrNoConfigs)
 	}
 
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })

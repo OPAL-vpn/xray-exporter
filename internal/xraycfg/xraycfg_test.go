@@ -2,6 +2,7 @@ package xraycfg_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -64,6 +65,9 @@ func TestDiscoverEmpty(t *testing.T) {
 	if err == nil {
 		t.Fatal("Discover: want error, got nil")
 	}
+	if !errors.Is(err, xraycfg.ErrNoConfigs) {
+		t.Errorf("error = %v, want ErrNoConfigs", err)
+	}
 	if !strings.Contains(err.Error(), "no *.json configs") {
 		t.Errorf("error = %q, want it to contain %q", err, "no *.json configs")
 	}
@@ -78,6 +82,11 @@ func TestDiscoverMissingDir(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), dir) {
 		t.Errorf("error = %q, want it to contain the directory path %q", err, dir)
+	}
+	// An unreadable directory is not the authoritative empty set: the caller
+	// keeps the previous configs rather than stopping every instance.
+	if errors.Is(err, xraycfg.ErrNoConfigs) {
+		t.Errorf("error = %v, want a read error, not ErrNoConfigs", err)
 	}
 }
 
