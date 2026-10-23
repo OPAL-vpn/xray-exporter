@@ -19,8 +19,8 @@ import (
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf"
 
-	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
-	"github.com/Anton-beep/xray-exporter/internal/xraylog"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
 )
 
 const (

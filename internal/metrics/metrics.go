@@ -10,9 +10,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
-	"github.com/Anton-beep/xray-exporter/internal/egress"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // namespace prefixes every metric the exporter publishes.

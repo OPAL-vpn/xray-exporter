@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 )
 
 func writeFile(t *testing.T, dir, name, body string) {

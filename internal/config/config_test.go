@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
 )
 
 func writeTargetsFile(t *testing.T, body string) string {

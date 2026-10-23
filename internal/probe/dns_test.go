@@ -22,7 +22,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 const testDNSContentType = "application/dns-message"

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // discardListener accepts connections and closes them, giving the proxy a

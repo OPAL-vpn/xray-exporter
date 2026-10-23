@@ -3,7 +3,7 @@
 # `config` label) before starting.
 services:
   xray-exporter:
-    image: ghcr.io/anton-beep/xray-exporter:latest
+    image: ghcr.io/opal-vpn/xray-exporter:latest
     restart: unless-stopped
     ports:
       - "9787:9787"

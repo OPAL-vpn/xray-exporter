@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // echoServer answers every request with body, the way an IP-echo endpoint

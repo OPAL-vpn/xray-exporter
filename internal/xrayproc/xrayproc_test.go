@@ -13,9 +13,9 @@ import (
 
 	clog "github.com/xtls/xray-core/common/log"
 
-	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
-	"github.com/Anton-beep/xray-exporter/internal/xraylog"
-	"github.com/Anton-beep/xray-exporter/internal/xrayproc"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
+	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
 const (

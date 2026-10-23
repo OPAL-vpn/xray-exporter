@@ -14,11 +14,11 @@ import (
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
-	"github.com/Anton-beep/xray-exporter/internal/metrics"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
-	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
-	"github.com/Anton-beep/xray-exporter/internal/xrayproc"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
 // testRecord is the address the local resolver answers with. It is in the

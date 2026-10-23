@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // Export is the snapshot as plain values, for the one-shot report. Configs,

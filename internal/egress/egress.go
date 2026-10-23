@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // maxEchoBody bounds the body read from the echo endpoint. An address is at

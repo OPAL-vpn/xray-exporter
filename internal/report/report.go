@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/metrics"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // absent is the cell for a value that was never measured. A measured failure is

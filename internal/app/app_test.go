@@ -17,14 +17,14 @@ import (
 
 	clog "github.com/xtls/xray-core/common/log"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
-	"github.com/Anton-beep/xray-exporter/internal/egress"
-	"github.com/Anton-beep/xray-exporter/internal/metrics"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
-	"github.com/Anton-beep/xray-exporter/internal/sampler"
-	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
-	"github.com/Anton-beep/xray-exporter/internal/xraylog"
-	"github.com/Anton-beep/xray-exporter/internal/xrayproc"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
+	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
 // testManager returns a manager with no instances, which every cycle and

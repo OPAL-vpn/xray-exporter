@@ -8,7 +8,7 @@ import (
 
 	clog "github.com/xtls/xray-core/common/log"
 
-	"github.com/Anton-beep/xray-exporter/internal/xraylog"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
 )
 
 // quiet restores a no-op handler after the test: the xray log handler is

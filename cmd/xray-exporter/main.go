@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/app"
+	"github.com/OPAL-vpn/xray-exporter/internal/app"
 )
 
 var version = "dev"

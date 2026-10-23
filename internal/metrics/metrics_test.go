@@ -13,9 +13,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
-	"github.com/Anton-beep/xray-exporter/internal/egress"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // sample is one gathered series: its family name, labels and value.

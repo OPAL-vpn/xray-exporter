@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
-	"github.com/Anton-beep/xray-exporter/internal/metrics"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // Job is one config measured by a cycle: its metric label and the loopback

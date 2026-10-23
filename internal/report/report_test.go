@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Anton-beep/xray-exporter/internal/metrics"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
 // export builds one config with a hostname target, an address-literal target

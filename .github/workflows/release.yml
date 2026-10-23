@@ -27,7 +27,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/anton-beep/xray-exporter:${{ github.ref_name }}
-            ghcr.io/anton-beep/xray-exporter:latest
+            ghcr.io/opal-vpn/xray-exporter:${{ github.ref_name }}
+            ghcr.io/opal-vpn/xray-exporter:latest
           build-args: |
             VERSION=${{ github.ref_name }}

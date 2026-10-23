@@ -1,4 +1,4 @@
-module github.com/Anton-beep/xray-exporter
+module github.com/OPAL-vpn/xray-exporter
 
 go 1.27
 

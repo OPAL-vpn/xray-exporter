@@ -24,14 +24,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/Anton-beep/xray-exporter/internal/config"
-	"github.com/Anton-beep/xray-exporter/internal/egress"
-	"github.com/Anton-beep/xray-exporter/internal/metrics"
-	"github.com/Anton-beep/xray-exporter/internal/probe"
-	"github.com/Anton-beep/xray-exporter/internal/report"
-	"github.com/Anton-beep/xray-exporter/internal/sampler"
-	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
-	"github.com/Anton-beep/xray-exporter/internal/xrayproc"
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/probe"
+	"github.com/OPAL-vpn/xray-exporter/internal/report"
+	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
+	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
+	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
 // Options are the command-line flags Run acts on.
