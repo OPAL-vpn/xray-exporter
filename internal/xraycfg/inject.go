@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 )
 
 const (
-	// loopbackListen keeps every injected inbound off the machine's interfaces.
-	loopbackListen = "127.0.0.1"
-	socksTag       = "xray-exporter-socks"
-	dnsTag         = "xray-exporter-dns"
+	socksTag = "xray-exporter-socks"
+	dnsTag   = "xray-exporter-dns"
 )
 
 // Ports are the loopback ports the injected inbounds listen on.
@@ -37,14 +37,14 @@ func Inject(raw []byte, p Ports, up Upstream, logLevel string) ([]byte, error) {
 	}
 	inbounds, err := marshal([]any{
 		socksInbound{
-			Listen:   loopbackListen,
+			Listen:   netutil.LoopbackHost,
 			Port:     p.Socks,
 			Protocol: "socks",
 			Tag:      socksTag,
 			Settings: socksSettings{Auth: "noauth", UDP: true},
 		},
 		dnsInbound{
-			Listen:   loopbackListen,
+			Listen:   netutil.LoopbackHost,
 			Port:     p.DNS,
 			Protocol: "dokodemo-door",
 			Tag:      dnsTag,

@@ -3,16 +3,13 @@ package xrayproc
 import (
 	"fmt"
 	"net"
-	"strconv"
 	"time"
 
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 )
 
 const (
-	// loopbackListen matches the address xraycfg injects into the inbounds.
-	loopbackListen = "127.0.0.1"
-
 	// readyTimeout bounds how long Start waits for the socks inbound to accept.
 	readyTimeout = 10 * time.Second
 	// readyPollInterval is the pause between readiness dials.
@@ -44,7 +41,7 @@ func allocatePorts() (xraycfg.Ports, error) {
 // waitForSocks polls the socks port until it accepts, so Start never returns an
 // instance whose inbound is still unbound.
 func waitForSocks(port int) error {
-	addr := net.JoinHostPort(loopbackListen, strconv.Itoa(port))
+	addr := netutil.LoopbackAddr(port)
 	deadline := time.Now().Add(readyTimeout)
 	for {
 		conn, err := net.DialTimeout("tcp", addr, dialTimeout)

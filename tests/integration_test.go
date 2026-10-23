@@ -7,12 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
@@ -89,11 +89,6 @@ func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config)
 	return manager
 }
 
-// loopback renders an instance port as an address on the loopback interface.
-func loopback(port int) string {
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-}
-
 // TestInjectedDNSInboundAnswersThroughTheTunnel pins the dokodemo-door inbound
 // the exporter injects: a query sent to the instance's DNS port must reach the
 // configured upstream and come back with its answer. Nothing else in the suite
@@ -102,7 +97,7 @@ func TestInjectedDNSInboundAnswersThroughTheTunnel(t *testing.T) {
 	upstream := xraycfg.Upstream{Host: "127.0.0.1", Port: testDNSServer(t)}
 	inst := testManagerFor(t, upstream, xraycfg.Config{Name: "freedom", Raw: []byte(freedomConfig)}).Instances()[0]
 
-	addr := loopback(inst.DNSPort)
+	addr := netutil.LoopbackAddr(inst.DNSPort)
 	const domain = "example.test"
 
 	res := probe.ProbeTunnelDNS(context.Background(), addr, domain, 5*time.Second)

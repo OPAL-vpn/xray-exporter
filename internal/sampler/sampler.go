@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/x509"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
@@ -130,13 +130,13 @@ func (s *Sampler) measureTarget(ctx context.Context, job Job, host string) bool 
 	literal := isIPLiteral(host)
 	var dns probe.DNSResult
 	if !literal {
-		dns = s.probers.DNS(ctx, loopback(job.DNSPort), host, s.opts.ProbeTimeout)
+		dns = s.probers.DNS(ctx, netutil.LoopbackAddr(job.DNSPort), host, s.opts.ProbeTimeout)
 		if ctx.Err() != nil {
 			return true
 		}
 	}
 
-	d := s.probers.Dialer(loopback(job.SocksPort), s.opts.ProbeTimeout)
+	d := s.probers.Dialer(netutil.LoopbackAddr(job.SocksPort), s.opts.ProbeTimeout)
 	r := s.probers.HTTP(ctx, d, host, s.opts.ProbeTimeout, nil)
 	if ctx.Err() != nil {
 		return true
@@ -159,7 +159,7 @@ func (s *Sampler) measureResolver(ctx context.Context, job Job, resolver config.
 		return
 	}
 
-	d := s.probers.Dialer(loopback(job.SocksPort), s.opts.ResolverTimeout)
+	d := s.probers.Dialer(netutil.LoopbackAddr(job.SocksPort), s.opts.ResolverTimeout)
 	if resolver.DoHURL != "" {
 		r := s.probers.DoH(ctx, d, resolver.DoHURL, s.opts.ProbeDomain, s.opts.ResolverTimeout, nil)
 		if ctx.Err() == nil {
@@ -214,9 +214,4 @@ func isIPLiteral(host string) bool {
 		host = host[1 : len(host)-1]
 	}
 	return net.ParseIP(host) != nil
-}
-
-// loopback renders a job port as an address on the loopback interface.
-func loopback(port int) string {
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 }

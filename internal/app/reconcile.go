@@ -3,11 +3,10 @@ package app
 import (
 	"context"
 	"errors"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/egress"
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
@@ -98,7 +97,7 @@ func (a *application) verifyEgress(ctx context.Context) {
 			continue
 		}
 
-		result := verifier.Check(ctx, probe.NewSocksDialer(loopback(inst.SocksPort), a.env.ProbeTimeout))
+		result := verifier.Check(ctx, probe.NewSocksDialer(netutil.LoopbackAddr(inst.SocksPort), a.env.ProbeTimeout))
 		a.snap.SetEgress(inst.Name, result, time.Now())
 		switch {
 		case result.Verified:
@@ -109,9 +108,4 @@ func (a *application) verifyEgress(ctx context.Context) {
 			a.logger.Error("egress not verified", "config", inst.Name, "ip", result.IP)
 		}
 	}
-}
-
-// loopback renders a job port as an address on the loopback interface.
-func loopback(port int) string {
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 }

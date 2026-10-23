@@ -13,6 +13,7 @@ import (
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
@@ -327,7 +328,7 @@ func TestCycleBuildsSocksDialerFromJob(t *testing.T) {
 		[]config.Resolver{{Name: "cf", DoHURL: "https://cf.test/dns-query"}},
 	)
 
-	want := loopback(socksPort)
+	want := netutil.LoopbackAddr(socksPort)
 	if len(addresses) != 2 {
 		t.Fatalf("dialer factory called %d times (%v), want 2: one target and one resolver dialer", len(addresses), addresses)
 	}
