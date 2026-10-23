@@ -160,6 +160,17 @@ UID is baked in and no `__inputs` prompt is needed. It ships `instance` →
 `config` → `target` variables, all multi-select with `All` as the default.
 See `deploy/grafana/README.md`.
 
+## Tests
+
+Both suites bind loopback ports only and contact no remote host. The
+end-to-end checks additionally drive the whole app entry point, so they sit
+behind the `integration` build tag and CI runs both:
+
+```sh
+go test ./...                    # package tests
+go test -tags integration ./...  # adds the end-to-end checks
+```
+
 ## Licence
 
 xray-exporter is licensed under the MIT Licence — see `LICENSE`.

@@ -1,3 +1,5 @@
+//go:build integration
+
 package app
 
 import (
@@ -16,10 +18,16 @@ import (
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
-	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
+
+// This test stays in package app and not in tests/ with the other integration
+// checks: it drives application.cycle against a config.Targets built in memory,
+// because a target host admits no port and the only local HTTPS server that can
+// be reached through the tunnel is the httptest one on an arbitrary port.
+// Reaching that seam through app.Run would mean reading a targets.yaml whose
+// host the validator rejects.
 
 // testRecord is the address the local resolver answers with. It is in the
 // documentation range, so no real answer can be mistaken for it.
@@ -90,43 +98,6 @@ func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config)
 		t.Fatalf("Apply: %v", errs)
 	}
 	return manager
-}
-
-// TestInjectedDNSInboundAnswersThroughTheTunnel pins the dokodemo-door inbound
-// the exporter injects: a query sent to the instance's DNS port must reach the
-// configured upstream and come back with its answer. Nothing else in the suite
-// exercises that inbound, so a wiring defect would surface only at deployment.
-func TestInjectedDNSInboundAnswersThroughTheTunnel(t *testing.T) {
-	upstream := xraycfg.Upstream{Host: "127.0.0.1", Port: testDNSServer(t)}
-	inst := testManagerFor(t, upstream, xraycfg.Config{Name: "freedom", Raw: []byte(freedomConfig)}).Instances()[0]
-
-	addr := loopback(inst.DNSPort)
-	const domain = "example.test"
-
-	res := probe.ProbeTunnelDNS(context.Background(), addr, domain, 5*time.Second)
-	if !res.Up {
-		t.Fatalf("ProbeTunnelDNS(%s, %s): Up = false, Err = %v", addr, domain, res.Err)
-	}
-
-	// ProbeTunnelDNS reports up and round trip by design; the same port answers
-	// a full exchange below, which is what proves the reply is the local record.
-	client := &dns.Client{Net: "udp", Timeout: 5 * time.Second}
-	query := new(dns.Msg)
-	query.SetQuestion(dns.Fqdn(domain), dns.TypeA)
-	reply, _, err := client.Exchange(query, addr)
-	if err != nil {
-		t.Fatalf("dns exchange through %s: %v", addr, err)
-	}
-	if len(reply.Answer) != 1 {
-		t.Fatalf("answer = %v, want the local A record", reply.Answer)
-	}
-	record, ok := reply.Answer[0].(*dns.A)
-	if !ok {
-		t.Fatalf("answer = %T, want *dns.A", reply.Answer[0])
-	}
-	if got := record.A.String(); got != testRecord {
-		t.Errorf("answer address = %s, want %s from the local upstream", got, testRecord)
-	}
 }
 
 // TestFreedomInstanceServesACycle pins the whole probe path the spec's
