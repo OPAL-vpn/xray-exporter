@@ -10,8 +10,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/report"
 )
 
-// once runs a single cycle, writes the report and fails unless every config is
-// running, every egress is verified and every cycle completed.
+// once runs one cycle, writes the report, and fails on any unhealthy config.
 func (a *application) once(ctx context.Context) error {
 	deadline := a.opts.Deadline
 	if deadline <= 0 {
@@ -29,9 +28,8 @@ func (a *application) once(ctx context.Context) error {
 	return nil
 }
 
-// writeReport renders the snapshot to opts.Out, or to stdout when it is empty.
-// A file is created mode 0600; an existing file is narrowed to it, because the
-// flag promises the mode, not just the creation mode.
+// writeReport writes opts.Out at 0600 (narrowing an existing file), or stdout
+// when it is empty.
 func (a *application) writeReport() error {
 	exp := a.snap.Export()
 	if a.opts.Out == "" {

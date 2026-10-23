@@ -1,7 +1,5 @@
-// Package app wires the exporter's parts into a running process: it loads the
-// environment and inputs, starts the xray instances, runs measurement cycles on
-// a timer, verifies egress, serves /metrics and /healthz, reloads on SIGHUP and
-// renders the one-shot report.
+// Package app wires the exporter into a process: inputs, xray instances,
+// measurement cycles, egress checks, /metrics, reloads and the one-shot report.
 package app
 
 import (
@@ -26,22 +24,19 @@ const DefaultDeadline = 5 * time.Minute
 
 // Options are the command-line flags Run acts on.
 type Options struct {
-	// Once runs one measurement cycle, writes the report and returns instead of
-	// serving. No listener is started in this mode.
+	// Once runs one cycle, writes the report and exits without serving.
 	Once bool
-	// Out is the one-shot report path. Empty writes the report to stdout.
+	// Out is the report path; empty writes to stdout.
 	Out string
-	// Deadline bounds one config's cycle in once mode. Once mode has no interval
-	// to halve, so the operator supplies the bound. Zero means DefaultDeadline.
+	// Deadline bounds one config's cycle in once mode; zero means DefaultDeadline.
 	Deadline time.Duration
-	// Version is the build version stamped into xray_build_info. Empty is dev.
+	// Version is stamped into xray_build_info; empty means dev.
 	Version string
 }
 
-// Run starts the exporter and blocks until ctx is cancelled or a termination
-// signal arrives. Every returned error is fatal: a rejected targets file, an
-// unreadable config directory, a listener that cannot bind. A single broken
-// xray config is not fatal; it is logged and published as running=0.
+// Run starts the exporter and blocks until ctx is cancelled or a signal
+// arrives. Setup errors are fatal; a broken xray config is published as
+// running=0.
 func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -62,9 +57,8 @@ func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error 
 	return a.serve(ctx)
 }
 
-// application is the process's state. targets, manager, verifier and upstream
-// are read by a background cycle and written by a reload, so the mutex guards
-// them; a reload interrupts the cycle before writing.
+// application is the process state. mu guards targets, manager, verifier and
+// upstream; a reload interrupts the running cycle before writing them.
 type application struct {
 	env        Env
 	opts       Options
@@ -80,7 +74,7 @@ type application struct {
 	verifier *egress.Verifier
 	upstream xraycfg.Upstream
 
-	// configs and seeded belong to the goroutine that runs the reload loop.
+	// configs and seeded belong to the reload goroutine.
 	configs []xraycfg.Config
 	seeded  map[string]struct{}
 
@@ -89,9 +83,8 @@ type application struct {
 	cancel   context.CancelFunc
 }
 
-// newApplication loads the inputs and starts every xray instance. The egress
-// baseline is fetched eagerly, so a misconfigured echo URL is visible in the
-// first log line rather than at the first verdict.
+// newApplication loads the inputs and starts every instance. The egress
+// baseline is fetched eagerly so a bad echo URL fails in the first log line.
 func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Logger) (*application, error) {
 	targets, upstream, err := loadTargets(env.TargetsFile)
 	if err != nil {
@@ -102,8 +95,8 @@ func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Log
 		return nil, err
 	}
 
-	// xray reads its geo assets from this variable itself; make the parsed value
-	// authoritative so the exporter's own default is the one in effect.
+	// xray reads its geo assets from this variable itself; keep the parsed value
+	// authoritative.
 	if err := os.Setenv("XRAY_LOCATION_ASSET", env.XrayAssetDir); err != nil {
 		return nil, fmt.Errorf("XRAY_LOCATION_ASSET: %w", err)
 	}
@@ -134,8 +127,6 @@ func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Log
 	return a, nil
 }
 
-// loadTargets reads the YAML and parses the resolver address the injected DNS
-// inbound forwards to.
 func loadTargets(path string) (*config.Targets, xraycfg.Upstream, error) {
 	targets, err := config.Load(path)
 	if err != nil {
@@ -148,8 +139,7 @@ func loadTargets(path string) (*config.Targets, xraycfg.Upstream, error) {
 	return targets, upstream, nil
 }
 
-// close releases the process's resources: any running cycle, the xray
-// instances and the mirrored log file, in that order.
+// close stops the cycle and instances, then releases the log file.
 func (a *application) close() {
 	a.interruptCycle()
 
@@ -163,7 +153,6 @@ func (a *application) close() {
 	}
 }
 
-// instances is the running instances under the state lock.
 func (a *application) instances() []*xrayproc.Instance {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

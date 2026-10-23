@@ -10,10 +10,9 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
-// reload applies a SIGHUP. Each piece is reconciled independently: a rejected
-// YAML file or config directory keeps its previous state and logs, and the
-// rest of the reload still applies. A changed DNS upstream restarts every
-// instance, because the injected dokodemo-door inbound carries the address.
+// reload reconciles each input independently; a rejected file keeps its previous
+// state. A changed DNS upstream restarts every instance because the injected
+// dokodemo-door inbound carries the address.
 func (a *application) reload(ctx context.Context) {
 	a.interruptCycle()
 
@@ -45,8 +44,7 @@ func (a *application) reload(ctx context.Context) {
 	discovered, err := xraycfg.Discover(a.env.ConfigDir)
 	switch {
 	case errors.Is(err, xraycfg.ErrNoConfigs):
-		// The directory was read and is empty, so it is authoritative: every
-		// config left it, and their instances and series go with them.
+		// A readable but empty directory is authoritative: every config left.
 		a.configs = nil
 		a.logger.Info("reload: config directory empty, stopping every config")
 	case err != nil:
@@ -61,12 +59,8 @@ func (a *application) reload(ctx context.Context) {
 		applied = false
 	}
 
-	// A measurement belongs to the instance that produced it. A stopped
-	// instance either left the directory or was restarted against a different
-	// tunnel, so its values describe a path that no longer exists and are
-	// dropped instead of being published for the new one. An unchanged config
-	// keeps its last values: they still describe the live tunnel, and the
-	// immediate cycle below refreshes them.
+	// A stopped or restarted instance's measurements describe a path that no
+	// longer exists; an unchanged config keeps its last values.
 	if restartedAll {
 		for name := range a.seeded {
 			a.snap.Drop(name)

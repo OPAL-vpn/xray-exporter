@@ -15,8 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// serve starts the HTTP listener and the signal loop. SIGHUP reloads; SIGTERM
-// and SIGINT stop the cycle, the listener and the instances.
+// serve starts the listener, the timer and the signal loop.
 func (a *application) serve(ctx context.Context) error {
 	listener, err := net.Listen("tcp", a.env.ListenAddr)
 	if err != nil {
@@ -38,8 +37,7 @@ func (a *application) serve(ctx context.Context) error {
 	ticker := time.NewTicker(a.env.Interval)
 	defer ticker.Stop()
 
-	// A first cycle at startup means the first scrape does not wait a whole
-	// interval for measurements.
+	// Measure at startup so the first scrape does not wait an interval.
 	a.startCycle(runCtx, a.env.Interval/2)
 
 	for {
@@ -70,9 +68,6 @@ func (a *application) serve(ctx context.Context) error {
 	}
 }
 
-// handler builds the routes the listener serves: the Prometheus scrape endpoint
-// over the snapshot and a liveness probe. It is separate from serve so the
-// wiring can be exercised without binding a port.
 func (a *application) handler() http.Handler {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(a.snap.Collector())
@@ -86,8 +81,7 @@ func (a *application) handler() http.Handler {
 	return mux
 }
 
-// stop ends the in-flight cycle, closes every xray instance and shuts the
-// listener down with a 5 s bound.
+// stop ends the cycle, closes the instances and shuts the listener down.
 func (a *application) stop(server *http.Server) error {
 	a.interruptCycle()
 

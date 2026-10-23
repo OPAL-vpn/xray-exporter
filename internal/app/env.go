@@ -8,9 +8,7 @@ import (
 	"time"
 )
 
-// Env is the exporter's configuration surface: one field per environment
-// variable, with the default applied when the variable is unset. LoadEnv is the
-// only place those defaults exist.
+// Env is the exporter's configuration; LoadEnv applies the defaults.
 type Env struct {
 	ListenAddr      string
 	ConfigDir       string
@@ -26,9 +24,7 @@ type Env struct {
 	LogLevel        slog.Level
 }
 
-// LoadEnv reads the exporter's environment. getenv is os.Getenv in main and a
-// map lookup in tests. Every error names the variable it came from, so a bad
-// container environment is diagnosable from the first log line.
+// LoadEnv reads the environment; every error names the variable it came from.
 func LoadEnv(getenv func(string) string) (Env, error) {
 	env := Env{
 		ListenAddr:   text(getenv, "LISTEN_ADDR", ":9787"),
@@ -62,7 +58,6 @@ func LoadEnv(getenv func(string) string) (Env, error) {
 	return env, nil
 }
 
-// text returns the variable's value, or def when it is unset.
 func text(getenv func(string) string, name, def string) string {
 	if v := getenv(name); v != "" {
 		return v
@@ -70,7 +65,6 @@ func text(getenv func(string) string, name, def string) string {
 	return def
 }
 
-// duration parses a positive duration variable.
 func duration(getenv func(string) string, name string, def time.Duration) (time.Duration, error) {
 	raw := getenv(name)
 	if raw == "" {
@@ -86,7 +80,6 @@ func duration(getenv func(string) string, name string, def time.Duration) (time.
 	return d, nil
 }
 
-// workers parses WORKERS, the probe concurrency within one config.
 func workers(getenv func(string) string) (int, error) {
 	raw := getenv("WORKERS")
 	if raw == "" {
@@ -102,8 +95,6 @@ func workers(getenv func(string) string) (int, error) {
 	return n, nil
 }
 
-// logLevel parses LOG_LEVEL. Only the four slog names are accepted: an empty
-// value is handled before this call, so "" is an error here, not "info".
 func logLevel(getenv func(string) string) (slog.Level, error) {
 	raw := getenv("LOG_LEVEL")
 	if raw == "" {

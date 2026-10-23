@@ -12,14 +12,11 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
-// apply reconciles the manager against cfgs and logs what changed. Startup and
-// reload share it so both report the same way. It returns the names it started
-// and stopped, and whether every config was accepted.
+// apply reconciles the manager against cfgs and logs what changed.
 func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, ok bool) {
 	started, stopped, errs := a.manager.Apply(cfgs)
 	for _, err := range errs {
-		// A config that failed to start already logged its name and xray's own
-		// cause; only the failures the manager did not report belong here.
+		// StartError already logged the failure; log only manager-level errors.
 		var startErr *xrayproc.StartError
 		if errors.As(err, &startErr) {
 			continue
@@ -32,10 +29,8 @@ func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, o
 	return started, stopped, len(errs) == 0
 }
 
-// seed declares every discovered config and its entities in the snapshot. A
-// config whose instance failed to start is still declared, with running=0, so
-// its series exist instead of appearing only once it recovers. Configs removed
-// from the directory lose their series here.
+// seed declares every config and its entities. Failed starts stay declared with
+// running=0, and configs removed from the directory lose their series.
 func (a *application) seed(now time.Time) {
 	a.mu.RLock()
 	targets := a.targets
@@ -72,10 +67,8 @@ func (a *application) seed(now time.Time) {
 	a.seeded = keep
 }
 
-// verifyEgress fetches the direct baseline once and then checks every running
-// config's tunnel against it. A config whose instance is not running has no
-// path to check, so its verdict is cleared instead of keeping the last green
-// one from before it stopped.
+// verifyEgress checks every running config; a stopped config loses its verdict
+// rather than keeping the last green one.
 func (a *application) verifyEgress(ctx context.Context) {
 	a.mu.RLock()
 	verifier := a.verifier
