@@ -5,10 +5,6 @@ do from one machine. Every config is started in-process, as an xray-core
 instance linked into this binary, and probed through its tunnel; the last cycle
 is served at `/metrics`.
 
-There is no xray binary in the image and no child process at runtime: xray-core
-is a Go dependency, so the image is the exporter plus `geoip.dat` and
-`geosite.dat` from a pinned Xray release.
-
 ## What it measures
 
 For every config in the config directory (the filename stem is the `config`
@@ -41,7 +37,26 @@ curl -s localhost:9787/metrics | grep '^xray_'
 A fresh deployment measures nothing until `targets.yaml` exists and at least one
 config JSON is in `xray/`.
 
-To build the image from source instead (from the repository root):
+`docker compose` above pulls the released image, so nothing is built locally.
+The same image runs without compose, from the directory holding `xray/` and
+`targets.yaml` (that is `deploy/` if you followed the steps above):
+
+```sh
+docker pull ghcr.io/opal-vpn/xray-exporter:v0.1.0
+docker run --rm \
+  -p 9787:9787 \
+  -v "$PWD/xray:/config/xray:ro" \
+  -v "$PWD/targets.yaml:/config/targets.yaml:ro" \
+  ghcr.io/opal-vpn/xray-exporter:v0.1.0
+```
+
+Releases are multi-arch (`linux/amd64`, `linux/arm64`); `latest` follows the
+newest release, so pin a tag wherever reproducibility matters. Tags and
+digests are listed on the [releases page](https://github.com/OPAL-vpn/xray-exporter/releases).
+
+### Building from source
+
+To build the image yourself instead (from the repository root):
 
 ```sh
 docker build -f deploy/Dockerfile -t xray-exporter:dev .
