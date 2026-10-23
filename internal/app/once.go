@@ -11,6 +11,8 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/report"
 )
 
+// once runs a single cycle, writes the report and fails unless every config is
+// running, every egress is verified and every cycle completed.
 func (a *application) once(ctx context.Context) error {
 	deadline := a.opts.Deadline
 	if deadline <= 0 {
@@ -30,7 +32,7 @@ func (a *application) once(ctx context.Context) error {
 
 // writeReport renders the snapshot to opts.Out, or to stdout when it is empty.
 // A file is created mode 0600; an existing file is narrowed to it, because the
-
+// flag promises the mode, not just the creation mode.
 func (a *application) writeReport() error {
 	exp := a.snap.Export()
 	if a.opts.Out == "" {
@@ -52,8 +54,8 @@ func (a *application) writeReport() error {
 	return f.Close()
 }
 
-// close releases the process's resources: any running cycle, the xray
-
+// overran reports whether a config's cycle used its entire deadline, which
+// means the deadline cut it short rather than the probes finishing.
 func overran(cycle metrics.CycleExport, deadline time.Duration) bool {
 	return cycle.Done && deadline > 0 && cycle.Duration >= deadline
 }
@@ -61,7 +63,7 @@ func overran(cycle metrics.CycleExport, deadline time.Duration) bool {
 // unhealthy lists why a one-shot run exits non-zero. A cycle the deadline cut
 // short counts as incomplete: the sampler stamps every pass it started as done,
 // so only the duration against the deadline tells a truncated pass from a
-
+// finished one — and a pre-deploy gate must not pass on a truncated one.
 func unhealthy(exp metrics.Export, deadline time.Duration) []string {
 	if len(exp.Configs) == 0 {
 		return []string{"no configs"}

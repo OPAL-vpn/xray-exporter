@@ -13,6 +13,9 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
+// apply reconciles the manager against cfgs and logs what changed. Startup and
+// reload share it so both report the same way. It returns the names it started
+// and stopped, and whether every config was accepted.
 func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, ok bool) {
 	started, stopped, errs := a.manager.Apply(cfgs)
 	for _, err := range errs {
@@ -33,7 +36,7 @@ func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, o
 // seed declares every discovered config and its entities in the snapshot. A
 // config whose instance failed to start is still declared, with running=0, so
 // its series exist instead of appearing only once it recovers. Configs removed
-
+// from the directory lose their series here.
 func (a *application) seed(now time.Time) {
 	a.mu.RLock()
 	targets := a.targets
@@ -73,7 +76,7 @@ func (a *application) seed(now time.Time) {
 // verifyEgress fetches the direct baseline once and then checks every running
 // config's tunnel against it. A config whose instance is not running has no
 // path to check, so its verdict is cleared instead of keeping the last green
-
+// one from before it stopped.
 func (a *application) verifyEgress(ctx context.Context) {
 	a.mu.RLock()
 	verifier := a.verifier
@@ -108,12 +111,7 @@ func (a *application) verifyEgress(ctx context.Context) {
 	}
 }
 
-// cycle runs one measurement pass over every running instance and logs its
-// duration. A config whose cycle used its whole deadline was cut short by it,
-
+// loopback renders a job port as an address on the loopback interface.
 func loopback(port int) string {
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 }
-
-// xrayLoggerFor returns the logger xray's stream is routed through, mirroring
-// the same lines into XRAY_LOG_FILE when it is set. One file holds the whole

@@ -9,6 +9,9 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
 )
 
+// cycle runs one measurement pass over every running instance and logs its
+// duration. A config whose cycle used its whole deadline was cut short by it,
+// which the sampler cannot report because it has no logger.
 func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	jobs := a.jobs()
 	targets, resolvers, probeDomain := a.inputs()
@@ -44,7 +47,7 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 // logProbes reports the probe results the cycle left in the snapshot: one WARN
 // per failed entity with the reason the probe retained, one DEBUG per success.
 // This is the only place the reason behind an up=0 gauge becomes visible; the
-
+// sampler keeps it in the snapshot and has no logger of its own.
 func (a *application) logProbes(exp metrics.Export, jobs []sampler.Job) {
 	for _, cfg := range exp.Configs {
 		if !hasJob(jobs, cfg.Name) {
@@ -68,7 +71,7 @@ func (a *application) logProbes(exp metrics.Export, jobs []sampler.Job) {
 
 // logProbe writes one probe outcome. kind names the measurement — the resolver
 // transport for a resolver — so two probes of one entity stay distinguishable,
-
+// and label is the entity key, "target" or "resolver".
 func (a *application) logProbe(kind, config, label, name string, up bool, err error) {
 	attrs := []any{"config", config, "probe", kind, label, name}
 	if up {
@@ -81,6 +84,7 @@ func (a *application) logProbe(kind, config, label, name string, up bool, err er
 	a.logger.Warn("probe failed", attrs...)
 }
 
+// startCycle runs one cycle in the background unless one is still running.
 func (a *application) startCycle(ctx context.Context, deadline time.Duration) bool {
 	if !a.cycleMu.TryLock() {
 		a.logger.Warn("cycle skipped: still running")
@@ -103,7 +107,7 @@ func (a *application) startCycle(ctx context.Context, deadline time.Duration) bo
 // interruptCycle cancels a running cycle and waits for it to stop, so a reload
 // sees no result from the configuration it is replacing. Results published
 // before the interruption stay as the last measurement and the reload's
-
+// immediate cycle replaces them.
 func (a *application) interruptCycle() {
 	a.cancelMu.Lock()
 	cancel := a.cancel
@@ -116,8 +120,7 @@ func (a *application) interruptCycle() {
 	a.cycleMu.Unlock()
 }
 
-// serve starts the HTTP listener and the signal loop. SIGHUP reloads; SIGTERM
-
+// jobs is the sampler's view of the running instances.
 func (a *application) jobs() []sampler.Job {
 	instances := a.instances()
 	jobs := make([]sampler.Job, 0, len(instances))
@@ -127,14 +130,14 @@ func (a *application) jobs() []sampler.Job {
 	return jobs
 }
 
+// inputs is the targets and resolvers a cycle measures.
 func (a *application) inputs() ([]config.Target, []config.Resolver, string) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.targets.Targets, a.targets.Resolvers, a.targets.DNSProbeDomain
 }
 
-// overran reports whether a config's cycle used its entire deadline, which
-
+// hasJob reports whether a cycle just measured the named config.
 func hasJob(jobs []sampler.Job, name string) bool {
 	for _, job := range jobs {
 		if job.Name == name {

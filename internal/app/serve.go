@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// serve starts the HTTP listener and the signal loop. SIGHUP reloads; SIGTERM
+// and SIGINT stop the cycle, the listener and the instances.
 func (a *application) serve(ctx context.Context) error {
 	listener, err := net.Listen("tcp", a.env.ListenAddr)
 	if err != nil {
@@ -70,7 +72,7 @@ func (a *application) serve(ctx context.Context) error {
 
 // handler builds the routes the listener serves: the Prometheus scrape endpoint
 // over the snapshot and a liveness probe. It is separate from serve so the
-
+// wiring can be exercised without binding a port.
 func (a *application) handler() http.Handler {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(a.snap.Collector())
@@ -85,7 +87,7 @@ func (a *application) handler() http.Handler {
 }
 
 // stop ends the in-flight cycle, closes every xray instance and shuts the
-
+// listener down with a 5 s bound.
 func (a *application) stop(server *http.Server) error {
 	a.interruptCycle()
 
@@ -100,7 +102,3 @@ func (a *application) stop(server *http.Server) error {
 	}
 	return nil
 }
-
-// reload applies a SIGHUP. Each piece is reconciled independently: a rejected
-// YAML file or config directory keeps its previous state and logs, and the
-// rest of the reload still applies. A changed DNS upstream restarts every

@@ -8,6 +8,9 @@ import (
 	"os"
 )
 
+// xrayLoggerFor returns the logger xray's stream is routed through, mirroring
+// the same lines into XRAY_LOG_FILE when it is set. One file holds the whole
+// process's stream because xray's log carries no instance identity.
 func xrayLoggerFor(env Env, logger *slog.Logger) (*slog.Logger, io.Closer, error) {
 	if env.XrayLogFile == "" {
 		return logger, nil, nil
@@ -27,7 +30,7 @@ func xrayLoggerFor(env Env, logger *slog.Logger) (*slog.Logger, io.Closer, error
 }
 
 // mirrorHandler writes every record to two handlers, the console and the
-
+// XRAY_LOG_FILE mirror.
 type mirrorHandler struct {
 	console slog.Handler
 	file    slog.Handler

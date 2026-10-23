@@ -21,6 +21,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
+// Options are the command-line flags Run acts on.
 type Options struct {
 	// Once runs one measurement cycle, writes the report and returns instead of
 	// serving. No listener is started in this mode.
@@ -37,7 +38,7 @@ type Options struct {
 // Run starts the exporter and blocks until ctx is cancelled or a termination
 // signal arrives. Every returned error is fatal: a rejected targets file, an
 // unreadable config directory, a listener that cannot bind. A single broken
-
+// xray config is not fatal; it is logged and published as running=0.
 func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -60,7 +61,7 @@ func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error 
 
 // application is the process's state. targets, manager, verifier and upstream
 // are read by a background cycle and written by a reload, so the mutex guards
-
+// them; a reload interrupts the cycle before writing.
 type application struct {
 	env        Env
 	opts       Options
@@ -87,7 +88,7 @@ type application struct {
 
 // newApplication loads the inputs and starts every xray instance. The egress
 // baseline is fetched eagerly, so a misconfigured echo URL is visible in the
-
+// first log line rather than at the first verdict.
 func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Logger) (*application, error) {
 	targets, upstream, err := loadTargets(env.TargetsFile)
 	if err != nil {
@@ -131,7 +132,7 @@ func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Log
 }
 
 // loadTargets reads the YAML and parses the resolver address the injected DNS
-
+// inbound forwards to.
 func loadTargets(path string) (*config.Targets, xraycfg.Upstream, error) {
 	targets, err := config.Load(path)
 	if err != nil {
@@ -144,15 +145,8 @@ func loadTargets(path string) (*config.Targets, xraycfg.Upstream, error) {
 	return targets, upstream, nil
 }
 
-// apply reconciles the manager against cfgs and logs what changed. Startup and
-// reload share it so both report the same way. It returns the names it started
-
-func (a *application) instances() []*xrayproc.Instance {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.manager.Instances()
-}
-
+// close releases the process's resources: any running cycle, the xray
+// instances and the mirrored log file, in that order.
 func (a *application) close() {
 	a.interruptCycle()
 
@@ -164,4 +158,11 @@ func (a *application) close() {
 			a.logger.Warn("closing log file", "error", err)
 		}
 	}
+}
+
+// instances is the running instances under the state lock.
+func (a *application) instances() []*xrayproc.Instance {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.manager.Instances()
 }

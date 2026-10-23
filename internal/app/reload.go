@@ -10,6 +10,10 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
+// reload applies a SIGHUP. Each piece is reconciled independently: a rejected
+// YAML file or config directory keeps its previous state and logs, and the
+// rest of the reload still applies. A changed DNS upstream restarts every
+// instance, because the injected dokodemo-door inbound carries the address.
 func (a *application) reload(ctx context.Context) {
 	a.interruptCycle()
 
@@ -85,5 +89,3 @@ func (a *application) reload(ctx context.Context) {
 
 	a.startCycle(ctx, a.env.Interval/2)
 }
-
-// once runs a single cycle, writes the report and fails unless every config is
