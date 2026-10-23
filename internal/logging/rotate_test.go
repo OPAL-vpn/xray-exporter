@@ -262,3 +262,43 @@ func TestRotatingWriterConcurrentWritersStayOnRecordBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestRotatingWriterWarnsOnceWhileTrimKeepsFailing(t *testing.T) {
+	var logs bytes.Buffer
+	path := filepath.Join(t.TempDir(), "xray.log")
+	if err := os.Mkdir(path+".trim", 0o755); err != nil {
+		t.Fatalf("mkdir .trim: %v", err)
+	}
+
+	w, err := logging.OpenRotating(path, 200, 120, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err != nil {
+		t.Fatalf("OpenRotating: %v", err)
+	}
+	defer w.Close()
+
+	appendRecords(t, w, 0, 40) // many crossings, every trim fails
+	if got := strings.Count(logs.String(), "trimming log file"); got != 1 {
+		t.Errorf("logged %d trim warnings over 40 records, want 1:\n%s", got, logs.String())
+	}
+	if body := readFile(t, path); !strings.Contains(body, rec(39)) {
+		t.Errorf("appends stopped after failed trims: %q", body[len(body)-80:])
+	}
+}
+
+func TestRotatingWriterRecoversAfterExternalTruncate(t *testing.T) {
+	w, path := openWriter(t, 200, 120)
+	appendRecords(t, w, 0, 4)
+
+	if err := os.Truncate(path, 0); err != nil { // a host logrotate copytruncate
+		t.Fatalf("truncate: %v", err)
+	}
+	appendRecords(t, w, 4, 20)
+
+	body := readFile(t, path)
+	if !strings.HasSuffix(body, rec(19)) {
+		t.Errorf("file does not end with the newest record: %q", body)
+	}
+	if strings.HasPrefix(body, "\x00") || strings.Contains(body, strings.Repeat("\x00", 4)) {
+		t.Errorf("file was not rewritten from the truncation point")
+	}
+}

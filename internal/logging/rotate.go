@@ -11,13 +11,15 @@ import (
 // RotatingWriter appends to one file and trims its oldest bytes to keep it
 // bounded, so one path holds a contiguous run of recent records.
 type RotatingWriter struct {
-	path string
-	max  int64
-	keep int64
-	f    *os.File
-	size int64
-	log  *slog.Logger
-	mu   sync.Mutex
+	path    string
+	max     int64
+	keep    int64
+	retryAt int64
+	f       *os.File
+	size    int64
+	log     *slog.Logger
+	warned  bool
+	mu      sync.Mutex
 }
 
 // OpenRotating opens path for appending, trimming it once if it already exceeds
@@ -42,14 +44,14 @@ func OpenRotating(path string, max, keep int64, logger *slog.Logger) (*RotatingW
 }
 
 // Write appends p, trimming once the file passes max. A failed trim leaves the
-// record appended and is retried on the next crossing.
+// record appended and is retried after another window of growth.
 func (w *RotatingWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	n, err := w.f.Write(p)
 	w.size += int64(n)
-	if err == nil && w.max > 0 && w.size > w.max {
+	if err == nil && w.max > 0 && w.size > w.max && w.size >= w.retryAt {
 		w.trimLocked()
 	}
 	return n, err
@@ -72,6 +74,15 @@ func (w *RotatingWriter) trim() {
 // across the copy, so a record logged mid-trim waits for the rename rather than
 // landing in the file being replaced.
 func (w *RotatingWriter) trimLocked() {
+	// A host copytruncate or a failed earlier rename moves the real size away
+	// from the counter; fstat is cheap once per window.
+	if info, err := w.f.Stat(); err == nil {
+		w.size = info.Size()
+	}
+	if w.size <= w.keep {
+		return
+	}
+
 	start, err := w.tailStart()
 	if err != nil {
 		w.trimFailed(err)
@@ -103,6 +114,8 @@ func (w *RotatingWriter) trimLocked() {
 	w.f.Close()
 	w.f = tmp
 	w.size -= start
+	w.retryAt = 0
+	w.warned = false
 }
 
 // tailStart returns the offset of the first record boundary at or after the kept
@@ -135,8 +148,16 @@ func (w *RotatingWriter) tailStart() (int64, error) {
 	return w.size, nil
 }
 
+// trimFailed reports the first failure only: a full disk fails every crossing,
+// and one warning per log record would bury the reasons that matter.
 func (w *RotatingWriter) trimFailed(err error) {
-	if w.log != nil {
+	if w.log != nil && !w.warned {
 		w.log.Warn("trimming log file", "path", w.path, "error", err)
 	}
+	w.warned = true
+	backoff := w.max - w.keep
+	if backoff <= 0 {
+		backoff = w.keep
+	}
+	w.retryAt = w.size + backoff
 }
