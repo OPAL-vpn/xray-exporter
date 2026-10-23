@@ -1,14 +1,20 @@
 package xrayproc_test
 
 import (
+	"bytes"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	clog "github.com/xtls/xray-core/common/log"
+
 	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
+	"github.com/Anton-beep/xray-exporter/internal/xraylog"
 	"github.com/Anton-beep/xray-exporter/internal/xrayproc"
 )
 
@@ -27,6 +33,32 @@ func config(name, outbound string) xraycfg.Config {
 
 func socksAddr(port int) string {
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+}
+
+// testLogger discards what xray logs: the handler is process-global, so a test
+// that kept one would see the next test's instances too.
+func testLogger(t *testing.T) *slog.Logger {
+	t.Helper()
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// syncBuffer is a log sink xray's own goroutines can write to while the test
+// reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // waitDial polls until a TCP connection to port succeeds or timeout passes.
@@ -129,7 +161,7 @@ func instanceNames(m *xrayproc.Manager) []string {
 }
 
 func TestStartFreedomConfig(t *testing.T) {
-	inst, err := xrayproc.Start(config("freedom", freedomOutbound), upstream, "warning")
+	inst, err := xrayproc.Start(config("freedom", freedomOutbound), upstream, "warning", testLogger(t))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -185,7 +217,7 @@ func TestStartRegistersModernTransports(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			inst, err := xrayproc.Start(config("modern", tc.outbound), upstream, "warning")
+			inst, err := xrayproc.Start(config("modern", tc.outbound), upstream, "warning", testLogger(t))
 			if err != nil {
 				t.Fatalf("Start: %v", err)
 			}
@@ -202,7 +234,7 @@ func TestStartRegistersModernTransports(t *testing.T) {
 }
 
 func TestStartErrorIsReturned(t *testing.T) {
-	inst, err := xrayproc.Start(config("broken", `{"protocol":"nope"}`), upstream, "warning")
+	inst, err := xrayproc.Start(config("broken", `{"protocol":"nope"}`), upstream, "warning", testLogger(t))
 	if err == nil {
 		inst.Close()
 		t.Fatal("Start: want error, got nil")
@@ -212,8 +244,56 @@ func TestStartErrorIsReturned(t *testing.T) {
 	}
 }
 
+// TestStartFailureIsAttributed pins that a config that cannot start leaves a
+// line naming it: xray's own stream carries no instance identity.
+func TestStartFailureIsAttributed(t *testing.T) {
+	var buf syncBuffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	inst, err := xrayproc.Start(config("bad", `{"protocol":"nope"}`), upstream, "warning", logger)
+	if err == nil {
+		inst.Close()
+		t.Fatal("Start: want error, got nil")
+	}
+
+	out := buf.String()
+	for _, want := range []string{"config=bad", "subsystem=xray", "nope"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log %q does not contain %q", out, want)
+		}
+	}
+}
+
+// TestManagerApplyRoutesXrayLogs pins that steady-state xray lines reach slog
+// once Apply returns: every instance start registers xray's own process-global
+// handler, so only the install at the end of Apply puts the exporter's back.
+func TestManagerApplyRoutesXrayLogs(t *testing.T) {
+	var buf syncBuffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	t.Cleanup(func() { xraylog.Install(testLogger(t), clog.Severity_Unknown) })
+
+	m := xrayproc.NewManager(upstream, "info", logger)
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Errorf("Manager.Close: %v", err)
+		}
+	})
+	if _, _, errs := m.Apply([]xraycfg.Config{config("a", freedomOutbound)}); len(errs) != 0 {
+		t.Fatalf("Apply errors: %v", errs)
+	}
+
+	clog.Record(&clog.GeneralMessage{Severity: clog.Severity_Error, Content: "steady boom"})
+
+	out := buf.String()
+	for _, want := range []string{"subsystem=xray", "steady boom"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log %q does not contain %q", out, want)
+		}
+	}
+}
+
 func TestManagerApplyDiff(t *testing.T) {
-	m := xrayproc.NewManager(upstream, "warning")
+	m := xrayproc.NewManager(upstream, "warning", testLogger(t))
 	t.Cleanup(func() {
 		if err := m.Close(); err != nil {
 			t.Errorf("Manager.Close: %v", err)
@@ -262,7 +342,7 @@ func TestManagerApplyDiff(t *testing.T) {
 }
 
 func TestManagerApplyKeepsPortsForUnchanged(t *testing.T) {
-	m := xrayproc.NewManager(upstream, "warning")
+	m := xrayproc.NewManager(upstream, "warning", testLogger(t))
 	t.Cleanup(func() {
 		if err := m.Close(); err != nil {
 			t.Errorf("Manager.Close: %v", err)

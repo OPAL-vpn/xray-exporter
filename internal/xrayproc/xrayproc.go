@@ -1,6 +1,7 @@
 // Package xrayproc runs one in-process xray-core instance per supplied config.
 // xray is linked in, never executed as a child process, so a single binary
-// carries both the exporter and every tunnel it measures.
+// carries both the exporter and every tunnel it measures. xray's log stream is
+// process-wide; internal/xraylog bridges it into slog.
 package xrayproc
 
 import (
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"sort"
 	"strconv"
@@ -18,6 +20,7 @@ import (
 	"github.com/xtls/xray-core/infra/conf"
 
 	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
+	"github.com/Anton-beep/xray-exporter/internal/xraylog"
 )
 
 const (
@@ -54,16 +57,22 @@ func (i *Instance) Close() error {
 // Start builds and starts the xray instance for cfg, with the injected socks
 // and tunnel-DNS inbounds listening on freshly allocated loopback ports. It
 // returns only once the socks inbound accepts connections; every error names
-// the config, because xray's own log stream does not.
-func Start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string) (*Instance, error) {
-	inst, err := start(cfg, up, logLevel)
+// the config, and so does the line Start logs for it, because xray's own log
+// stream does not.
+//
+// logger receives that line and the xray output captured while starting.
+func Start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string, logger *slog.Logger) (*Instance, error) {
+	inst, err := start(cfg, up, logLevel, logger)
 	if err != nil {
+		// Same subsystem as the bridged stream, so one filter shows xray's whole
+		// story: what it said while starting, then why it failed.
+		logger.Error("xray instance failed to start", "subsystem", "xray", "config", cfg.Name, "error", err)
 		return nil, fmt.Errorf("%s: %w", cfg.Name, err)
 	}
 	return inst, nil
 }
 
-func start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string) (*Instance, error) {
+func start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string, logger *slog.Logger) (*Instance, error) {
 	ports, err := allocatePorts()
 	if err != nil {
 		return nil, err
@@ -86,6 +95,13 @@ func start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string) (*Instance,
 	if err != nil {
 		return nil, err
 	}
+
+	// core.New runs app/log first, which registers xray's own handler for the
+	// whole process; the capture has to come after that or it is already gone.
+	// From here every line the instance emits while starting is buffered and
+	// released with config=<name>.
+	release := xraylog.Capture()
+	defer func() { release(cfg.Name, logger) }()
 
 	inst := &Instance{
 		Name:      cfg.Name,
@@ -159,15 +175,17 @@ type Manager struct {
 	mu       sync.Mutex
 	up       xraycfg.Upstream
 	logLevel string
+	logger   *slog.Logger
 	running  map[string]managed
 }
 
 // NewManager returns a manager that starts every instance against up and
-// logLevel.
-func NewManager(up xraycfg.Upstream, logLevel string) *Manager {
+// logLevel and routes xray's log stream to logger.
+func NewManager(up xraycfg.Upstream, logLevel string, logger *slog.Logger) *Manager {
 	return &Manager{
 		up:       up,
 		logLevel: logLevel,
+		logger:   logger,
 		running:  make(map[string]managed),
 	}
 }
@@ -176,7 +194,11 @@ func NewManager(up xraycfg.Upstream, logLevel string) *Manager {
 // whose raw bytes changed are stopped, missing ones are started, and unchanged
 // ones keep their instance and ports. A config that fails to start is reported
 // in errs and does not abort the rest of the batch. started and stopped are
-// sorted by config name.
+// sorted by config name. An unparseable logLevel is reported in errs too and
+// leaves the previously installed handler in place.
+//
+// Apply installs the log handler after the last start, because every instance
+// start replaces it.
 func (m *Manager) Apply(cfgs []xraycfg.Config) (started, stopped []string, errs []error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -202,13 +224,19 @@ func (m *Manager) Apply(cfgs []xraycfg.Config) (started, stopped []string, errs 
 		if _, running := m.running[cfg.Name]; running {
 			continue
 		}
-		inst, err := Start(cfg, m.up, m.logLevel)
+		inst, err := Start(cfg, m.up, m.logLevel, m.logger)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		m.running[cfg.Name] = managed{inst: inst, raw: cfg.Raw}
 		started = append(started, cfg.Name)
+	}
+
+	if min, err := xraylog.ParseSeverity(m.logLevel); err != nil {
+		errs = append(errs, err)
+	} else {
+		xraylog.Install(m.logger, min)
 	}
 
 	sort.Strings(started)
