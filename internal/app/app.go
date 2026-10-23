@@ -164,6 +164,12 @@ func loadTargets(path string) (*config.Targets, xraycfg.Upstream, error) {
 func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, ok bool) {
 	started, stopped, errs := a.manager.Apply(cfgs)
 	for _, err := range errs {
+		// A config that failed to start already logged its name and xray's own
+		// cause; only the failures the manager did not report belong here.
+		var startErr *xrayproc.StartError
+		if errors.As(err, &startErr) {
+			continue
+		}
 		a.logger.Error("xray config failed", "error", err)
 	}
 	if len(started) > 0 || len(stopped) > 0 {
@@ -275,12 +281,53 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	}
 	elapsed := time.Since(start)
 
-	for _, cfg := range a.snap.Export().Configs {
+	exp := a.snap.Export()
+	a.logProbes(exp, jobs)
+	for _, cfg := range exp.Configs {
 		if hasJob(jobs, cfg.Name) && overran(cfg.Cycle, deadline) {
 			a.logger.Warn("cycle overrun", "config", cfg.Name, "duration", cfg.Cycle.Duration)
 		}
 	}
 	a.logger.Info("cycle complete", "duration", elapsed, "configs", len(jobs))
+}
+
+// logProbes reports the probe results the cycle left in the snapshot: one WARN
+// per failed entity with the reason the probe retained, one DEBUG per success.
+// This is the only place the reason behind an up=0 gauge becomes visible; the
+// sampler keeps it in the snapshot and has no logger of its own.
+func (a *application) logProbes(exp metrics.Export, jobs []sampler.Job) {
+	for _, cfg := range exp.Configs {
+		if !hasJob(jobs, cfg.Name) {
+			continue
+		}
+		for _, target := range cfg.Targets {
+			if target.HasDNS {
+				a.logProbe("dns", cfg.Name, "target", target.Target, target.DNS.Up, target.DNS.Err)
+			}
+			if target.HasHTTP {
+				a.logProbe("https", cfg.Name, "target", target.Target, target.HTTP.Up, target.HTTP.Err)
+			}
+		}
+		for _, resolver := range cfg.Resolvers {
+			for _, transport := range resolver.Transports {
+				a.logProbe(transport.Transport, cfg.Name, "resolver", resolver.Name, transport.Result.Up, transport.Result.Err)
+			}
+		}
+	}
+}
+
+// logProbe writes one probe outcome. probe names the measurement — the resolver
+// transport for a resolver — so two probes of one entity stay distinguishable.
+func (a *application) logProbe(probe, config, entity, name string, up bool, err error) {
+	attrs := []any{"config", config, "probe", probe, entity, name}
+	if up {
+		a.logger.Debug("probe succeeded", attrs...)
+		return
+	}
+	if err != nil {
+		attrs = append(attrs, "err", err)
+	}
+	a.logger.Warn("probe failed", attrs...)
 }
 
 // startCycle runs one cycle in the background unless one is still running.

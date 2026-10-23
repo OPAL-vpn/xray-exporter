@@ -54,6 +54,18 @@ func (i *Instance) Close() error {
 	return i.closeErr
 }
 
+// StartError is one config's failed start. Start has already logged it with the
+// config name and xray's own cause, so a caller aggregating failures must not
+// log it a second time.
+type StartError struct {
+	Config string
+	Err    error
+}
+
+func (e *StartError) Error() string { return e.Config + ": " + e.Err.Error() }
+
+func (e *StartError) Unwrap() error { return e.Err }
+
 // Start builds and starts the xray instance for cfg, with the injected socks
 // and tunnel-DNS inbounds listening on freshly allocated loopback ports. It
 // returns only once the socks inbound accepts connections; every error names
@@ -67,7 +79,7 @@ func Start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string, logger *slo
 		// Same subsystem as the bridged stream, so one filter shows xray's whole
 		// story: what it said while starting, then why it failed.
 		logger.Error("xray instance failed to start", "subsystem", "xray", "config", cfg.Name, "error", err)
-		return nil, fmt.Errorf("%s: %w", cfg.Name, err)
+		return nil, &StartError{Config: cfg.Name, Err: err}
 	}
 	return inst, nil
 }

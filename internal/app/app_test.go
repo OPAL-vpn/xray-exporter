@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,10 +15,15 @@ import (
 	"testing"
 	"time"
 
+	clog "github.com/xtls/xray-core/common/log"
+
 	"github.com/Anton-beep/xray-exporter/internal/config"
 	"github.com/Anton-beep/xray-exporter/internal/egress"
 	"github.com/Anton-beep/xray-exporter/internal/metrics"
+	"github.com/Anton-beep/xray-exporter/internal/probe"
+	"github.com/Anton-beep/xray-exporter/internal/sampler"
 	"github.com/Anton-beep/xray-exporter/internal/xraycfg"
+	"github.com/Anton-beep/xray-exporter/internal/xraylog"
 	"github.com/Anton-beep/xray-exporter/internal/xrayproc"
 )
 
@@ -237,4 +243,94 @@ func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 			t.Errorf("interrupted pass logged %q, want neither outcome:\n%s", want, logs.String())
 		}
 	}
+}
+
+// TestLogProbesReportsEachOutcome covers the operator's only view of why an up
+// gauge is 0: one WARN per failed entity with the retained reason, one DEBUG per
+// success, and nothing for a config the cycle did not run.
+func TestLogProbesReportsEachOutcome(t *testing.T) {
+	var logs bytes.Buffer
+	a := &application{logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+
+	exp := metrics.Export{Configs: []metrics.ConfigExport{
+		{
+			Name: "nl1",
+			Targets: []metrics.TargetExport{
+				{
+					Target:  "down.test",
+					HasHTTP: true, HTTP: probe.HTTPResult{Err: errors.New("tls handshake refused")},
+					HasDNS: true, DNS: probe.DNSResult{Err: errors.New("dns read: timeout")},
+				},
+				{
+					Target:  "up.test",
+					HasHTTP: true, HTTP: probe.HTTPResult{Up: true, Status: http.StatusOK},
+					HasDNS: true, DNS: probe.DNSResult{Up: true},
+				},
+			},
+			Resolvers: []metrics.ResolverExport{{
+				Name: "cf",
+				Transports: []metrics.TransportExport{{
+					Transport: metrics.TransportDoH,
+					Result:    probe.ResolverResult{Err: errors.New("doh status 500")},
+				}},
+			}},
+		},
+		{
+			Name:    "gone",
+			Targets: []metrics.TargetExport{{Target: "stale.test", HasHTTP: true, HTTP: probe.HTTPResult{Err: errors.New("stale")}}},
+		},
+	}}
+
+	a.logProbes(exp, []sampler.Job{{Name: "nl1"}})
+
+	out := logs.String()
+	for _, want := range []string{
+		`level=WARN msg="probe failed" config=nl1 probe=dns target=down.test err="dns read: timeout"`,
+		`level=WARN msg="probe failed" config=nl1 probe=https target=down.test err="tls handshake refused"`,
+		`level=WARN msg="probe failed" config=nl1 probe=doh resolver=cf err="doh status 500"`,
+		`level=DEBUG msg="probe succeeded" config=nl1 probe=dns target=up.test`,
+		`level=DEBUG msg="probe succeeded" config=nl1 probe=https target=up.test`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log does not contain %q:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "level=WARN"); got != 3 {
+		t.Errorf("got %d WARN lines, want one per failed entity transport (3):\n%s", got, out)
+	}
+	if strings.Contains(out, "config=gone") {
+		t.Errorf("a config the cycle did not run was logged:\n%s", out)
+	}
+}
+
+// TestApplyLogsAStartFailureOnce pins that a config that cannot start leaves one
+// ERROR line: Start already names the config and xray's own cause.
+func TestApplyLogsAStartFailureOnce(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	a := &application{logger: logger, snap: metrics.New(), manager: testManager(logger)}
+	t.Cleanup(func() {
+		if err := a.manager.Close(); err != nil {
+			t.Errorf("Manager.Close: %v", err)
+		}
+		// Apply installs xray's process-global handler; leave it discarding.
+		xraylog.Install(testDiscardLogger(), clog.Severity_Unknown)
+	})
+
+	_, _, accepted := a.apply([]xraycfg.Config{{Name: "broken", Raw: []byte(`{"outbounds":[{"protocol":"nope"}]}`)}})
+	if accepted {
+		t.Fatal("apply accepted a batch with a config that cannot start")
+	}
+
+	out := logs.String()
+	if got := strings.Count(out, "level=ERROR"); got != 1 {
+		t.Errorf("start failure logged %d times, want 1:\n%s", got, out)
+	}
+	if !strings.Contains(out, "config=broken") {
+		t.Errorf("log does not name the config:\n%s", out)
+	}
+}
+
+func testDiscardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
