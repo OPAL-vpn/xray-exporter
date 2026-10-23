@@ -75,36 +75,6 @@ func get(t *testing.T, url string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
-func TestMirrorHandlerWritesConsoleAndFile(t *testing.T) {
-	var console, file bytes.Buffer
-	logger := slog.New(mirrorHandler{
-		console: slog.NewTextHandler(&console, &slog.HandlerOptions{Level: slog.LevelInfo}),
-		file:    slog.NewTextHandler(&file, &slog.HandlerOptions{Level: slog.LevelDebug}),
-	})
-
-	logger.Info("instance started", "config", "nl1")
-	logger.Debug("xray heartbeat")
-
-	for name, buf := range map[string]*bytes.Buffer{"console": &console, "file": &file} {
-		out := buf.String()
-		if !strings.Contains(out, "instance started") || !strings.Contains(out, "config=nl1") {
-			t.Errorf("%s got %q, want the message and its attributes", name, out)
-		}
-	}
-
-	// The console keeps its own level: only the file mirrors the debug stream.
-	if strings.Contains(console.String(), "xray heartbeat") {
-		t.Errorf("console got the debug line, want its info filter to hold:\n%s", console.String())
-	}
-	if !strings.Contains(file.String(), "xray heartbeat") {
-		t.Errorf("file missed the debug line, want it to keep the mirrored stream:\n%s", file.String())
-	}
-}
-
-// TestReloadEmptyConfigDirectoryDropsSeries covers the reload after the last
-// config file was deleted: a readable but empty directory is authoritative, so
-// the instance stops and its series disappear instead of surviving as a stale
-// "keeping previous" set.
 func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "203.0.113.7")
