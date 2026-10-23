@@ -21,8 +21,8 @@ import (
 
 const (
 	freedomOutbound = `{"protocol":"freedom","settings":{}}`
-	// realityPublicKey is 32 zero bytes in base64url without padding, the only
-	// shape xray accepts for a REALITY public key.
+	// realityPublicKey is 32 zero bytes in base64url without padding, xray's
+	// only accepted shape.
 	realityPublicKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 )
 
@@ -36,15 +36,13 @@ func socksAddr(port int) string {
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 }
 
-// testLogger discards what xray logs: the handler is process-global, so a test
-// that kept one would see the next test's instances too.
+// testLogger discards xray logs; the handler is process-global.
 func testLogger(t *testing.T) *slog.Logger {
 	t.Helper()
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// syncBuffer is a log sink xray's own goroutines can write to while the test
-// reads it.
+// syncBuffer is a log sink xray's goroutines can write while the test reads.
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -80,8 +78,7 @@ func waitDial(t *testing.T, port int, timeout time.Duration) {
 	}
 }
 
-// socksConnect performs a socks5 CONNECT to an IPv4 host, finishes the reply,
-// and returns its REP byte.
+// socksConnect performs a socks5 CONNECT and returns its REP byte.
 func socksConnect(t *testing.T, socksPort, targetPort int, host string) byte {
 	t.Helper()
 	ip := net.ParseIP(host).To4()
@@ -187,9 +184,8 @@ func TestStartFreedomConfig(t *testing.T) {
 
 	waitDial(t, inst.SocksPort, 2*time.Second)
 
-	// The CONNECT target is a loopback listener, not a public address: xray replies
-	// after the upstream dial, so a target it cannot reach would fail the reply and
-	// make the test depend on the runner's routes.
+	// Use a loopback CONNECT target: xray replies only after the upstream dial,
+	// so an unreachable target would make the test depend on the runner's routes.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen on loopback: %v", err)
@@ -205,9 +201,8 @@ func TestStartFreedomConfig(t *testing.T) {
 	}
 }
 
-// TestStartRegistersModernTransports pins that vless, REALITY and ws are
-// registered in the process by the distro/all blank import: without it,
-// core.New panics on the unregistered protobuf type instead of returning.
+// TestStartRegistersModernTransports pins that the distro/all blank import
+// registers vless, REALITY and ws; otherwise core.New panics.
 func TestStartRegistersModernTransports(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -258,8 +253,7 @@ func TestStartErrorIsReturned(t *testing.T) {
 	}
 }
 
-// TestStartFailureIsAttributed pins that a config that cannot start leaves a
-// line naming it: xray's own stream carries no instance identity.
+// TestStartFailureIsAttributed pins that a failed start names its config.
 func TestStartFailureIsAttributed(t *testing.T) {
 	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
@@ -278,9 +272,8 @@ func TestStartFailureIsAttributed(t *testing.T) {
 	}
 }
 
-// TestManagerApplyRoutesXrayLogs pins that steady-state xray lines reach slog
-// once Apply returns: every instance start registers xray's own process-global
-// handler, so only the install at the end of Apply puts the exporter's back.
+// TestManagerApplyRoutesXrayLogs pins that steady-state lines reach slog after
+// Apply, which reinstalls the exporter's handler over xray's process-global one.
 func TestManagerApplyRoutesXrayLogs(t *testing.T) {
 	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))

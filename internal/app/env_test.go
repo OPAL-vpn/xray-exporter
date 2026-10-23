@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// getenvFunc turns a map into the getenv function LoadEnv takes.
 func getenvFunc(values map[string]string) func(string) string {
 	return func(name string) string { return values[name] }
 }

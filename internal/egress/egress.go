@@ -1,6 +1,5 @@
-// Package egress verifies that a config's own routing sends traffic through
-// its tunnel: the address an echo endpoint sees through the tunnel must differ
-// from the address it sees when the exporter asks directly.
+// Package egress verifies that a config's traffic leaves through its tunnel by
+// comparing the address an echo endpoint sees with and without the tunnel.
 package egress
 
 import (
@@ -16,36 +15,28 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// maxEchoBody bounds the body read from the echo endpoint. An address is at
-// most 45 bytes, so anything longer is not one.
+// maxEchoBody bounds the echo response; an address needs far less.
 const maxEchoBody = 128
 
-// tunnelTimeout bounds the request that leaves through the tunnel. An echo
-// endpoint that needs longer than this cannot say anything about routing.
+// tunnelTimeout bounds the tunneled fetch; a slower echo endpoint cannot say
+// anything about routing.
 const tunnelTimeout = 5 * time.Second
 
 // Result is the outcome of one egress check.
 type Result struct {
-	// IP is the address the echo endpoint saw through the tunnel, empty when
-	// the fetch or parse failed.
 	IP string
-	// Verified is true when the tunnel's address differs from the direct
-	// baseline: their equality means the config is routing traffic out
-	// directly.
+	// Verified is false when the tunnel address equals the direct baseline: the
+	// config is routing traffic out directly.
 	Verified bool
-	// Err is why the check produced no verdict.
-	Err error
+	Err      error
 }
 
-// Verifier compares the egress address through a tunnel with the one seen by a
-// direct request. The direct request is the only one the process ever makes,
-// and its address is cached for ttl.
+// Verifier caches the direct baseline and compares it with a tunneled fetch.
 type Verifier struct {
 	url     string
 	ttl     time.Duration
 	timeout time.Duration
 
-	// now is the clock, replaceable so a test can age the cache.
 	now func() time.Time
 
 	mu        sync.Mutex
@@ -53,8 +44,7 @@ type Verifier struct {
 	fetchedAt time.Time
 }
 
-// New returns a Verifier for the IP-echo endpoint at url. The direct baseline
-// fetch is bounded by timeout; the request through the tunnel is capped at 5 s.
+// New returns a Verifier for the IP-echo endpoint at url.
 func New(url string, ttl, timeout time.Duration) *Verifier {
 	return &Verifier{
 		url:     url,
@@ -64,10 +54,8 @@ func New(url string, ttl, timeout time.Duration) *Verifier {
 	}
 }
 
-// Baseline fetches the egress address directly and caches it for the
-// verifier's TTL. A failed fetch is not cached: the next call asks again. The
-// cache lock is held across the fetch so concurrent callers share the one
-// direct request.
+// Baseline fetches the direct address and caches it for the TTL. A failed fetch
+// is not cached, and the lock is held across the fetch so callers share it.
 func (v *Verifier) Baseline(ctx context.Context) (string, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -79,8 +67,7 @@ func (v *Verifier) Baseline(ctx context.Context) (string, error) {
 	client := &http.Client{
 		Timeout: v.timeout,
 		// A nil Transport would be http.DefaultTransport, which honours
-		// HTTP_PROXY from the environment; the baseline must leave the
-		// process directly.
+		// HTTP_PROXY; the baseline must leave the process directly.
 		Transport: &http.Transport{},
 	}
 	defer client.CloseIdleConnections()
@@ -96,9 +83,6 @@ func (v *Verifier) Baseline(ctx context.Context) (string, error) {
 	return ip, nil
 }
 
-// Check fetches the egress address through d and compares it with the direct
-// baseline. The result is unverified unless both fetches produced an address
-// and the addresses differ.
 func (v *Verifier) Check(ctx context.Context, d probe.Dialer) Result {
 	baseline, err := v.Baseline(ctx)
 	if err != nil {
@@ -116,7 +100,6 @@ func (v *Verifier) Check(ctx context.Context, d probe.Dialer) Result {
 	return Result{IP: ip, Verified: ip != baseline}
 }
 
-// fetchIP GETs url and returns the address the endpoint reports.
 func fetchIP(ctx context.Context, client *http.Client, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

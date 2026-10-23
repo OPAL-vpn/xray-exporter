@@ -11,8 +11,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xraylog"
 )
 
-// quiet restores a no-op handler after the test: the xray log handler is
-// process-global, so a test's handler would otherwise outlive it.
+// quiet restores a no-op handler; xray's handler is process-global.
 func quiet(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() { clog.RegisterHandler(discard{}) })
@@ -22,7 +21,6 @@ type discard struct{}
 
 func (discard) Handle(clog.Message) {}
 
-// newLogger returns a text logger at debug and the buffer it writes to.
 func newLogger() (*slog.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	return slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})), &buf
@@ -37,8 +35,7 @@ func TestParseSeverity(t *testing.T) {
 		{"info", clog.Severity_Info},
 		{"warning", clog.Severity_Warning},
 		{"error", clog.Severity_Error},
-		// xray lowercases its own loglevel, so a differently cased value is the
-		// same spelling.
+		// xray lowercases loglevel, so case is not part of the spelling.
 		{"Warning", clog.Severity_Warning},
 	}
 
@@ -95,8 +92,8 @@ func TestInstallFiltersBelowMin(t *testing.T) {
 	}
 }
 
-// TestInstallUnknownMinPassesEverything pins that an unset minimum is not a
-// filter: Severity_Unknown means "no minimum", not "drop everything".
+// TestInstallUnknownMinPassesEverything pins that Severity_Unknown is "no
+// minimum", not "drop everything".
 func TestInstallUnknownMinPassesEverything(t *testing.T) {
 	quiet(t)
 	logger, buf := newLogger()

@@ -75,8 +75,8 @@ func TestDiscoverMissingDir(t *testing.T) {
 	if !strings.Contains(err.Error(), dir) {
 		t.Errorf("error = %q, want it to contain the directory path %q", err, dir)
 	}
-	// An unreadable directory is not the authoritative empty set: the caller
-	// keeps the previous configs rather than stopping every instance.
+	// An unreadable directory is not the authoritative empty set; keep the
+	// previous configs.
 	if errors.Is(err, xraycfg.ErrNoConfigs) {
 		t.Errorf("error = %v, want a read error, not ErrNoConfigs", err)
 	}

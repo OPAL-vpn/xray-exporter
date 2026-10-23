@@ -10,18 +10,14 @@ is served at `/metrics`.
 For every config in the config directory (the filename stem is the `config`
 label), once per `INTERVAL` (default 5 min):
 
-- **HTTPS through the tunnel**, for every target in `targets.yaml`: status code,
-  whether the certificate verified, time to first byte, total time. Requests go
-  through a socks5 inbound the exporter injects into the config, so the bytes
-  take the same path a user's traffic would.
-- **Tunnel DNS**, for every target: an `A` query sent to a `dokodemo-door`
-  inbound the exporter injects, which forwards to `dns_upstream`. Up means a DNS
-  response arrived, any rcode.
-- **DoH and DoT through the tunnel**, for every resolver in `targets.yaml` and
-  only for the transports that resolver configures: "can this tunnel carry
-  encrypted DNS", not "is local DNS censored".
-- **Egress verification** at start and on reload: whether the config's traffic
-  actually leaves through the tunnel (see [Egress](#egress)).
+- **HTTPS through the tunnel**, for every target: status, certificate verdict,
+  TTFB and total time. Requests use an injected socks5 inbound, so they take a
+  user's path.
+- **Tunnel DNS**, for every target: an `A` query through an injected
+  `dokodemo-door` inbound forwarded to `dns_upstream`. Up means any DNS response.
+- **DoH and DoT through the tunnel**, for each configured resolver transport:
+  can this tunnel carry encrypted DNS.
+- **Egress verification** at start and on reload (see [Egress](#egress)).
 
 ## Quick start
 
@@ -37,9 +33,8 @@ curl -s localhost:9787/metrics | grep '^xray_'
 A fresh deployment measures nothing until `targets.yaml` exists and at least one
 config JSON is in `xray/`.
 
-`docker compose` above pulls the released image, so nothing is built locally.
-The same image runs without compose, from the directory holding `xray/` and
-`targets.yaml` (that is `deploy/` if you followed the steps above):
+`docker compose` pulls the released image. Without compose, run the same image
+from the directory holding `xray/` and `targets.yaml`:
 
 ```sh
 docker pull ghcr.io/opal-vpn/xray-exporter:v0.1.0
@@ -51,12 +46,12 @@ docker run --rm \
 ```
 
 Releases are multi-arch (`linux/amd64`, `linux/arm64`); `latest` follows the
-newest release, so pin a tag wherever reproducibility matters. Tags and
-digests are listed on the [releases page](https://github.com/OPAL-vpn/xray-exporter/releases).
+newest release, so pin a tag where reproducibility matters. Tags and digests
+are on the [releases page](https://github.com/OPAL-vpn/xray-exporter/releases).
 
 ### Building from source
 
-To build the image yourself instead (from the repository root):
+To build the image yourself, from the repository root:
 
 ```sh
 docker build -f deploy/Dockerfile -t xray-exporter:dev .
@@ -93,8 +88,8 @@ sets.
 | `XRAY_LOG_FILE` | unset | mirror xray's stream into one file |
 | `LOG_LEVEL` | `info` | exporter's own log level |
 
-`XRAY_LOCATION_ASSET` is already set in the image and already points at the
-baked-in `geoip.dat`/`geosite.dat`; override it only if you mount your own.
+`XRAY_LOCATION_ASSET` points at the image's baked-in `geoip.dat`/`geosite.dat`;
+override it only to mount your own.
 
 ## Metrics
 
@@ -127,53 +122,46 @@ self-labelling.
 | `xray_exporter_config_reload_errors_total` | — | counter |
 | `xray_build_info` | version, go_version | 1 |
 
-Every expected series exists from the first scrape, with `up` at 0 until a probe
-runs. Latency series are absent until the first success — a 0 would chart as
-infinitely fast and poison averages, so a gap is the honest value. A failed
-probe sets its `up` gauge to 0, moves the timestamp forward and leaves the last
-successful latency in place; staleness is visible through the timestamp. Series
-disappear only when their config or target does.
+Every expected series exists from the first scrape with `up` at 0. Latency
+series appear only after a success — a 0 would chart as infinitely fast and
+poison averages. A failed probe sets `up` to 0, moves the timestamp forward and
+keeps the last successful latency, so staleness is visible through the
+timestamp. Series disappear only with their config or target.
 
 ## Egress
 
-A config's own `routing` rules can send probe traffic out directly, in which case
-the numbers describe the wrong path. To catch that, the exporter compares the
-address an IP-echo endpoint (your `egress_check_url`) sees through the config's
-tunnel with the address it sees on a **direct** request.
+A config's `routing` can send probe traffic out directly, making the numbers
+describe the wrong path. The exporter compares the address `egress_check_url`
+sees through the tunnel with the address it sees on a **direct** request.
 
 The direct request is the only traffic this process sends outside a tunnel:
 
-- it is fetched once per process and cached for `EGRESS_CACHE_TTL` (default
-  `1h`), so it is one request per TTL no matter how many configs exist;
-- the request through the tunnel happens once per config at start and on reload;
-- equal addresses mean routing went out directly: `xray_egress_verified{config}`
-  is 0 and an ERROR line names the config. Probes still run — the values then
-  describe what the config actually does, with the verdict visible beside them.
+- the baseline is cached for `EGRESS_CACHE_TTL` (default `1h`), one request per
+  TTL regardless of config count;
+- the tunnel check runs once per config at start and on reload;
+- equal addresses mean direct routing: `xray_egress_verified{config}` is 0 and
+  an ERROR names the config. Probes still run; the verdict sits beside their
+  values.
 
 ## Logs
 
-The exporter logs to stdout as `slog` `key=value` lines: one line per failed
-probe, one summary per cycle, one line per instance start, failure and reload.
-Successful probes log at debug. `LOG_LEVEL` (default `info`) sets the threshold.
+The exporter logs `slog` `key=value` lines to stdout: failed probes, one cycle
+summary, instance start/failure/reload. Successful probes log at debug;
+`LOG_LEVEL` (default `info`) sets the threshold.
 
-xray-core registers its log handler **globally**, so xray's stream is
-process-wide by construction: with several configs in one process a line cannot
-say which config emitted it. Attribution exists where the exporter can sequence
-it — a failed instance start is logged with `config=<name>` and the tail of
-xray's own error. A steady-state xray warning names no config. The mitigation is
-operational: one container per config if attribution matters. `XRAY_LOG_LEVEL`
-(default `warning`) filters xray's own verbosity and `XRAY_LOG_FILE`, when set,
-mirrors the same stream into one file; rotation belongs to the host.
-
-`SIGTERM` stops the cycle, closes every xray instance and exits.
+xray registers its log handler **globally**, so with several configs in one
+process a line cannot name its config. A failed start is attributed with
+`config=<name>` and xray's error; steady-state warnings are not. Run one
+container per config if attribution matters. `XRAY_LOG_LEVEL` filters xray's
+verbosity; `XRAY_LOG_FILE` mirrors the stream to one file (rotation is the
+host's). `SIGTERM` stops the cycle, closes instances and exits.
 
 ## Dashboard
 
-`deploy/grafana/dashboard.json` is importable as-is into any Grafana that has a
-Prometheus datasource: every panel reads a `datasource` template variable, so no
-UID is baked in and no `__inputs` prompt is needed. It ships `instance` →
-`config` → `target` variables, all multi-select with `All` as the default.
-See `deploy/grafana/README.md`.
+`deploy/grafana/dashboard.json` imports as-is into any Grafana with a Prometheus
+datasource: every panel reads a `datasource` variable, so no UID is baked in. It
+ships `instance` → `config` → `target` variables, all multi-select with `All` as
+the default. See `deploy/grafana/README.md`.
 
 ## Tests
 

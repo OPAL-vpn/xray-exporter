@@ -9,9 +9,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// redirectDialer is a direct Dialer that records every address the probe asked
-// for and dials target instead when one is set. That lets a probe request its
-// production address (dot.test:853) while the test serves a loopback listener.
+// redirectDialer records requested addresses and optionally dials target.
 type redirectDialer struct {
 	target string
 
@@ -31,14 +29,12 @@ func (d *redirectDialer) DialContext(ctx context.Context, network, addr string) 
 	return dialer.DialContext(ctx, network, addr)
 }
 
-// Requests returns the addresses the probe asked for, in arrival order.
 func (d *redirectDialer) Requests() []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return append([]string(nil), d.requests...)
 }
 
-// dnsAnswer packs a reply to query carrying one A record for addr.
 func dnsAnswer(t *testing.T, query *dns.Msg, addr string) []byte {
 	t.Helper()
 

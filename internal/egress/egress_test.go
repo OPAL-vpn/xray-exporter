@@ -14,8 +14,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// echoServer answers every request with body, the way an IP-echo endpoint
-// answers with the caller's address.
+// echoServer answers every request with body, like an IP-echo endpoint.
 func echoServer(t *testing.T, body string) *httptest.Server {
 	t.Helper()
 
@@ -27,14 +26,11 @@ func echoServer(t *testing.T, body string) *httptest.Server {
 	return srv
 }
 
-// dialAddr is the host:port a dialer has to reach for srv.
 func dialAddr(srv *httptest.Server) string {
 	return strings.TrimPrefix(srv.URL, "http://")
 }
 
-// fixedDialer sends every connection to addr, ignoring the requested address:
-// in production the tunnel resolves the echo URL's host, and the test serves
-// that host locally.
+// fixedDialer sends every connection to addr, ignoring the requested address.
 type fixedDialer struct{ addr string }
 
 func (d *fixedDialer) DialContext(ctx context.Context, network, _ string) (net.Conn, error) {

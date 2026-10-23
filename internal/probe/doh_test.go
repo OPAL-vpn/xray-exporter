@@ -17,7 +17,6 @@ import (
 
 const testDNSContentType = "application/dns-message"
 
-// readDNSQuery unpacks the request body of a DoH POST.
 func readDNSQuery(t *testing.T, r *http.Request) *dns.Msg {
 	t.Helper()
 
@@ -76,9 +75,8 @@ func TestProbeDoH(t *testing.T) {
 	}
 }
 
-// TestProbeDoHOverTLS posts to a TLS resolver named by its address. Go sends no
-// SNI for an address literal, so the peer name has to come from the URL: a
-// resolver behind such a URL is the case a plain-HTTP DoH test cannot see.
+// TestProbeDoHOverTLS covers an IP-addressed resolver: no SNI is sent, so the
+// peer name must come from the URL.
 func TestProbeDoHOverTLS(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query := readDNSQuery(t, r)
@@ -140,8 +138,7 @@ func TestProbeDoHRejectsBadResponses(t *testing.T) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
-				// A well-formed answer under the wrong type: only the type keeps
-				// this down.
+				// A well-formed answer under the wrong type: only the type keeps this down.
 				w.Header().Set("Content-Type", "text/plain")
 				_, _ = w.Write(dnsAnswer(t, query, "192.0.2.10"))
 			},

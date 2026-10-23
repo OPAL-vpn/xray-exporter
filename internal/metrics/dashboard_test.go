@@ -13,15 +13,11 @@ import (
 // dashboardPath is the dashboard the README points at.
 const dashboardPath = "../../deploy/grafana/dashboard.json"
 
-// dashboardMetricRef matches a Prometheus metric name inside a PromQL string.
 var dashboardMetricRef = regexp.MustCompile(`\b(xray_[a-z0-9_]+)\b`)
 
-// dashboardPromQLKeys are the keys that hold a PromQL string: panel targets use
-// "expr", template variables repeat the same query in "query" and
-// "definition", so a metric rename can drift there too.
+// dashboardPromQLKeys hold PromQL strings; a metric rename can drift in any.
 var dashboardPromQLKeys = []string{"definition", "expr", "query"}
 
-// dashboardDoc is the part of Grafana's dashboard model the drift test reads.
 type dashboardDoc struct {
 	SchemaVersion int `json:"schemaVersion"`
 	Templating    struct {
@@ -37,8 +33,8 @@ type dashboardVariable struct {
 	IncludeAll bool            `json:"includeAll"`
 }
 
-// queryString is a variable's query, whether Grafana stores it as a bare
-// string (datasource) or as a definition string (query variables).
+// queryString reads a query stored as a bare string, as Grafana does for
+// datasource and some query variables.
 func (v dashboardVariable) queryString() string {
 	var query string
 	if err := json.Unmarshal(v.Query, &query); err != nil {
@@ -47,9 +43,8 @@ func (v dashboardVariable) queryString() string {
 	return query
 }
 
-// TestDashboardMetricsExist is the only thing between a metric rename and a
-// silently empty panel: it fails when the dashboard names a metric the exporter
-// does not register, or when the importable shape regresses.
+// TestDashboardMetricsExist fails when a panel names a missing metric or the
+// importable shape regresses.
 func TestDashboardMetricsExist(t *testing.T) {
 	raw, err := os.ReadFile(dashboardPath)
 	if err != nil {
@@ -115,8 +110,7 @@ func TestDashboardMetricsExist(t *testing.T) {
 	})
 }
 
-// checkDashboardVariables pins the datasource variable and the instance →
-// config → target chain, so the dashboard stays importable with no baked UID.
+// checkDashboardVariables pins the instance → config → target chain.
 func checkDashboardVariables(t *testing.T, list []dashboardVariable) {
 	t.Helper()
 
@@ -153,8 +147,6 @@ func checkDashboardVariables(t *testing.T, list []dashboardVariable) {
 	}
 }
 
-// unknownDashboardMetrics returns every metric an expression names that
-// AllNames does not declare, in document order.
 func unknownDashboardMetrics(exprs []string) []string {
 	known := make(map[string]struct{}, len(AllNames()))
 	for _, name := range AllNames() {
@@ -174,8 +166,7 @@ func unknownDashboardMetrics(exprs []string) []string {
 	return unknown
 }
 
-// unscopedPanelExprs returns every panel expression that does not filter on
-// $instance, so a panel that shows all instances at once fails the test.
+// unscopedPanelExprs returns panel expressions that do not filter on $instance.
 func unscopedPanelExprs(exprs []string) []string {
 	var unscoped []string
 	for _, expr := range exprs {
@@ -186,9 +177,7 @@ func unscopedPanelExprs(exprs []string) []string {
 	return unscoped
 }
 
-// dashboardPanels returns every PromQL string in the document, the subset held
-// by panel targets, and how many panels hold targets. Rows carry no targets, so
-// they do not count.
+// dashboardPanels returns every PromQL string, the panel subset, and panels.
 func dashboardPanels(document any) (exprs, panelExprs []string, panels int) {
 	for _, obj := range dashboardObjects(document, nil) {
 		for _, key := range dashboardPromQLKeys {
@@ -217,8 +206,7 @@ func dashboardPanels(document any) (exprs, panelExprs []string, panels int) {
 	return exprs, panelExprs, panels
 }
 
-// dashboardObjects flattens every JSON object in the document, visiting keys in
-// sorted order so a failure lists metrics deterministically.
+// dashboardObjects flattens every JSON object in sorted key order.
 func dashboardObjects(node any, out []map[string]any) []map[string]any {
 	switch value := node.(type) {
 	case map[string]any:

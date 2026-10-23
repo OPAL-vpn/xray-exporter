@@ -10,8 +10,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// discardListener accepts connections and closes them, giving the proxy a
-// reachable target without needing a real service.
+// discardListener accepts and closes, giving the proxy a reachable target.
 func discardListener(t *testing.T) string {
 	t.Helper()
 

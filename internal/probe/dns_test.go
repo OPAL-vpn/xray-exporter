@@ -13,9 +13,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// testUDPServer starts a UDP DNS server on a loopback port, counts every packet
-// that arrives, and hands each one to handler when it is not nil. A nil handler
-// is a resolver that never answers.
+// testUDPServer serves DNS on a loopback port; a nil handler never answers.
 func testUDPServer(t *testing.T, handler dns.Handler) (addr string, received func() int) {
 	t.Helper()
 

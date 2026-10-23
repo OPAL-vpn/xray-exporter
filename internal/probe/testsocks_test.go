@@ -19,18 +19,15 @@ const (
 	testRepSucceeded = 0x00
 )
 
-// socksRequest is what the fake proxy saw on the wire for one CONNECT. ATYP is
-// the raw address-type byte, which is how a test pins that a hostname was sent
-// unresolved rather than converted to an IP by the dialer.
+// socksRequest records one CONNECT; ATYP pins whether the host was sent
+// unresolved.
 type socksRequest struct {
 	ATYP byte
 	Host string
 	Port int
 }
 
-// testSocksServer is a minimal SOCKS5 proxy for tests. It accepts only the
-// no-auth method, records every CONNECT request, and relays the connection to
-// either the requested target or upstream.
+// testSocksServer is a no-auth SOCKS5 proxy that records CONNECTs and relays.
 type testSocksServer struct {
 	listener net.Listener
 
@@ -40,8 +37,7 @@ type testSocksServer struct {
 	requests []socksRequest
 }
 
-// newTestSocksServer starts the proxy on a loopback port. An empty upstream
-// means each CONNECT is relayed to the target it asked for.
+// newTestSocksServer starts the proxy; empty upstream relays to the target.
 func newTestSocksServer(t *testing.T, upstream string) *testSocksServer {
 	t.Helper()
 
@@ -57,18 +53,14 @@ func newTestSocksServer(t *testing.T, upstream string) *testSocksServer {
 	return s
 }
 
-// Addr is the proxy address a dialer should be pointed at.
 func (s *testSocksServer) Addr() string { return s.listener.Addr().String() }
 
-// setFailCode makes every subsequent CONNECT answered with this reply code
-// instead of being relayed.
 func (s *testSocksServer) setFailCode(code byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failCode = code
 }
 
-// Requests returns the CONNECT requests seen so far, in arrival order.
 func (s *testSocksServer) Requests() []socksRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -12,14 +12,12 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 )
 
-// sample is one gathered series: its family name, labels and value.
 type sample struct {
 	name   string
 	labels map[string]string
 	value  float64
 }
 
-// labels builds a label set from alternating name/value pairs.
 func labels(pairs ...string) map[string]string {
 	if len(pairs)%2 != 0 {
 		panic("labels: odd number of arguments")
@@ -31,8 +29,7 @@ func labels(pairs ...string) map[string]string {
 	return out
 }
 
-// gatherSamples renders the snapshot through a fresh registry, the way
-// Prometheus sees it, and flattens the result into samples.
+// gatherSamples renders the snapshot the way Prometheus sees it.
 func gatherSamples(t *testing.T, snap *Snapshot) []sample {
 	t.Helper()
 
@@ -69,8 +66,7 @@ func sampleValue(metric *dto.Metric) float64 {
 	}
 }
 
-// findSample returns the value of the series with exactly this name and label
-// set. It fails when more than one series matches.
+// findSample fails when more than one series matches.
 func findSample(t *testing.T, samples []sample, name string, want map[string]string) (float64, bool) {
 	t.Helper()
 
@@ -89,7 +85,6 @@ func findSample(t *testing.T, samples []sample, name string, want map[string]str
 	return found[0].value, true
 }
 
-// mustSample fails the test when the series is absent.
 func mustSample(t *testing.T, samples []sample, name string, want map[string]string) float64 {
 	t.Helper()
 
@@ -100,7 +95,6 @@ func mustSample(t *testing.T, samples []sample, name string, want map[string]str
 	return got
 }
 
-// mustNoSample fails the test when the series is present.
 func mustNoSample(t *testing.T, samples []sample, name string, want map[string]string) {
 	t.Helper()
 
@@ -149,7 +143,6 @@ func resolverDoH(name, url string) config.Resolver {
 	return config.Resolver{Name: name, DoHURL: url}
 }
 
-// String keeps failures readable when a sample set is printed.
 func (s sample) String() string {
 	return fmt.Sprintf("%s%v=%v", s.name, s.labels, s.value)
 }

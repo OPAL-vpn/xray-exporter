@@ -22,25 +22,19 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
-// This test stays in package app and not in tests/ with the other integration
-// checks: it drives application.cycle against a config.Targets built in memory,
-// because a target host admits no port and the only local HTTPS server that can
-// be reached through the tunnel is the httptest one on an arbitrary port.
-// Reaching that seam through app.Run would mean reading a targets.yaml whose
-// host the validator rejects.
+// This test drives application.cycle directly: a target host admits no port, so
+// the only reachable local HTTPS server is httptest on an arbitrary port.
 
-// testRecord is the address the local resolver answers with. It is in the
-// documentation range, so no real answer can be mistaken for it.
+// testRecord is in the documentation range, so no real answer can be confused
+// with it.
 const testRecord = "198.51.100.7"
 
-// freedomConfig is a complete client config whose only outbound is freedom: the
-// probe path is real, but no remote server is involved.
+// freedomConfig has only a freedom outbound: the probe path is real, but no
+// remote host is involved.
 const freedomConfig = `{"outbounds":[{"protocol":"freedom","settings":{}}]}`
 
-// testDNSServer serves testRecord for every A query on a loopback UDP port and
-// returns that port. Answers are fixed, so a lookup that returns the record
-// proves it reached this server — and therefore left through the injected
-// dokodemo-door inbound rather than through a system resolver.
+// testDNSServer serves testRecord for every A query and returns its port. A
+// lookup that returns the record proves it left through the injected inbound.
 func testDNSServer(t *testing.T) int {
 	t.Helper()
 
@@ -81,8 +75,7 @@ func testDNSServer(t *testing.T) int {
 	return pc.LocalAddr().(*net.UDPAddr).Port
 }
 
-// testManagerFor starts one freedom instance against upstream and returns the
-// manager that owns it.
+// testManagerFor starts one freedom instance against upstream.
 func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config) *xrayproc.Manager {
 	t.Helper()
 
@@ -100,14 +93,9 @@ func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config)
 	return manager
 }
 
-// TestFreedomInstanceServesACycle pins the whole probe path the spec's
-// verification section asks for: a freedom instance, a local HTTPS target and
-// one measurement cycle that publishes the target's series with probe_up = 1,
-// which means the HTTPS probe left through the injected socks inbound.
-//
-// The target is the loopback address and port of the test server: a target host
-// has no port of its own, so this is the only way to point a cycle at a local
-// server without binding 443.
+// TestFreedomInstanceServesACycle pins the whole probe path: a freedom instance,
+// a local HTTPS target, and one cycle with probe_up=1. The target carries the
+// test server's port because a target host has no port of its own.
 func TestFreedomInstanceServesACycle(t *testing.T) {
 	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -149,8 +137,7 @@ func TestFreedomInstanceServesACycle(t *testing.T) {
 	}
 }
 
-// gather renders the snapshot into a name-and-labels keyed map, the way a
-// Prometheus scrape would read it.
+// gather renders the snapshot the way a scrape would read it.
 func gather(t *testing.T, snap *metrics.Snapshot) map[string]float64 {
 	t.Helper()
 

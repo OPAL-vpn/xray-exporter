@@ -33,8 +33,7 @@ func TestReloadCounters(t *testing.T) {
 	}
 }
 
-// TestReloadCountersArePerSnapshot pins that a snapshot starts at zero even
-// after another snapshot counted reloads; the counters are state, not schema.
+// TestReloadCountersArePerSnapshot pins that counters are state, not schema.
 func TestReloadCountersArePerSnapshot(t *testing.T) {
 	first := New()
 	first.IncReload()

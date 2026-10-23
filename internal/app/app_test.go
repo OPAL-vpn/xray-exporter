@@ -27,8 +27,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
-// testManager returns a manager with no instances, which every cycle and
-// reload path under test can use without starting xray.
+// testManager returns a manager with no instances.
 func testManager(logger *slog.Logger) *xrayproc.Manager {
 	return xrayproc.NewManager(xraycfg.Upstream{Host: "9.9.9.9", Port: 53}, "warning", logger)
 }
@@ -132,9 +131,7 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 	}
 }
 
-// TestCycleInterruptedPassLogsNeitherOutcome covers the reload's interrupted
-// pass: it reached only some of its jobs, so it reports neither a completion
-// nor an overrun for the rest.
+// An interrupted pass logs neither completion nor overrun for unvisited jobs.
 func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
@@ -161,9 +158,8 @@ func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 	}
 }
 
-// TestLogProbesReportsEachOutcome covers the operator's only view of why an up
-// gauge is 0: one WARN per failed entity with the retained reason, one DEBUG per
-// success, and nothing for a config the cycle did not run.
+// logProbes is the only view of why an up gauge is 0: one WARN per failure, one
+// DEBUG per success, nothing for a skipped config.
 func TestLogProbesReportsEachOutcome(t *testing.T) {
 	var logs bytes.Buffer
 	a := &application{logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
@@ -219,8 +215,7 @@ func TestLogProbesReportsEachOutcome(t *testing.T) {
 	}
 }
 
-// TestApplyLogsAStartFailureOnce pins that a config that cannot start leaves one
-// ERROR line: Start already names the config and xray's own cause.
+// A failed start leaves exactly one ERROR line.
 func TestApplyLogsAStartFailureOnce(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
@@ -229,7 +224,7 @@ func TestApplyLogsAStartFailureOnce(t *testing.T) {
 		if err := a.manager.Close(); err != nil {
 			t.Errorf("Manager.Close: %v", err)
 		}
-		// Apply installs xray's process-global handler; leave it discarding.
+		// Leave xray's process-global handler discarding.
 		xraylog.Install(testDiscardLogger(), clog.Severity_Unknown)
 	})
 

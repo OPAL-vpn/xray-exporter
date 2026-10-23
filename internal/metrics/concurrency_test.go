@@ -23,8 +23,7 @@ func TestConcurrentSetAndCollect(t *testing.T) {
 			}
 		}()
 	}
-	// Scrapes happen on the test goroutine so a Gather failure still fails the
-	// test, and run while the setters write.
+	// Scrape on the test goroutine so a Gather failure still fails the test.
 	for j := 0; j < 100; j++ {
 		_ = gatherSamples(t, snap)
 		_ = snap.Export()

@@ -226,8 +226,7 @@ func loadError(t *testing.T, path string) string {
 	return err.Error()
 }
 
-// TestLoadRejectsSchemeInHost covers the form that used to work for the HTTPS
-// probe and break the DNS probe of the same target: one place rejects it now.
+// TestLoadRejectsSchemeInHost covers the form that used to break the DNS probe.
 func TestLoadRejectsSchemeInHost(t *testing.T) {
 	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
 dns_probe_domain: example.com
@@ -243,8 +242,7 @@ targets:
 	}
 }
 
-// TestLoadNormalizesHosts pins the accepted target forms and that the host is
-// stored trimmed, because the label and both probes derive from it.
+// TestLoadNormalizesHosts pins the accepted forms and trimming.
 func TestLoadNormalizesHosts(t *testing.T) {
 	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
 dns_probe_domain: example.com
@@ -279,9 +277,7 @@ targets:
 	}
 }
 
-// TestLoadRejectsUnparseableHosts covers the IPv6 forms that would reach the
-// probe broken: an unbracketed literal is ambiguous in a URL and a bracket pair
-// that does not hold an address is not a host.
+// TestLoadRejectsUnparseableHosts covers broken IPv6 forms.
 func TestLoadRejectsUnparseableHosts(t *testing.T) {
 	cases := []struct {
 		name string

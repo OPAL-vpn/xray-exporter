@@ -20,8 +20,6 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// testCertificate returns a self-signed certificate for names and a pool that
-// trusts it.
 func testCertificate(t *testing.T, names ...string) (tls.Certificate, *x509.CertPool) {
 	t.Helper()
 
@@ -63,7 +61,6 @@ func testCertificate(t *testing.T, names ...string) (tls.Certificate, *x509.Cert
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, roots
 }
 
-// serveDoT answers one length-prefixed DNS query per accepted connection.
 func serveDoT(t *testing.T, listener net.Listener) {
 	t.Helper()
 
@@ -82,8 +79,7 @@ func handleDoT(t *testing.T, conn net.Conn) {
 
 	var head [2]byte
 	if _, err := io.ReadFull(conn, head[:]); err != nil {
-		// A client that rejects our certificate hangs up here; that is a
-		// probe verdict, not a server failure.
+		// A client rejecting our certificate hangs up here; that is a verdict.
 		return
 	}
 
@@ -113,8 +109,6 @@ func handleDoT(t *testing.T, conn net.Conn) {
 	}
 }
 
-// startDoTServer serves DoT on a loopback port with cert and returns its
-// address.
 func startDoTServer(t *testing.T, cert tls.Certificate) string {
 	t.Helper()
 
@@ -158,8 +152,7 @@ func TestProbeDoTUntrustedCertificate(t *testing.T) {
 	cert, _ := testCertificate(t, "dot.test")
 	addr := startDoTServer(t, cert)
 
-	// nil roots mean the system pool, which cannot contain the test CA: a
-	// resolver whose certificate does not verify is down, as in the HTTPS probe.
+	// nil roots mean the system pool, which cannot contain the test CA.
 	res := probe.ProbeDoT(context.Background(), &redirectDialer{target: addr}, "dot.test", "example.test", 2*time.Second, nil)
 
 	if res.Up {
@@ -178,7 +171,6 @@ func TestProbeDoTDown(t *testing.T) {
 		{
 			name: "connection refused",
 			target: func(t *testing.T) string {
-				// Reserve a port, then close it, so nothing listens there.
 				listener, err := net.Listen("tcp", "127.0.0.1:0")
 				if err != nil {
 					t.Fatalf("reserve port: %v", err)

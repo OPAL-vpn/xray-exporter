@@ -10,8 +10,8 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// export builds one config with a hostname target, an address-literal target
-// and a single DoH resolver.
+// export builds one config with a hostname target, an IP-literal target and a
+// DoH resolver.
 func export(verified bool) metrics.Export {
 	return metrics.Export{Configs: []metrics.ConfigExport{{
 		Name:        "nl1",
@@ -65,7 +65,6 @@ func render(t *testing.T, exp metrics.Export) string {
 	return buf.String()
 }
 
-// row returns the first line whose first field is name.
 func row(t *testing.T, out, name string) string {
 	t.Helper()
 

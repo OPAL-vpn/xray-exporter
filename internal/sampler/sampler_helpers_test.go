@@ -27,9 +27,7 @@ type resolverCall struct {
 	domain string
 }
 
-// fakeProbers records every probe it serves and answers with the configured
-// result after an optional delay. The delay honours ctx, the way the real
-// probers do, so a deadline test does not have to wait it out.
+// fakeProbers records probes and answers after an optional ctx-aware delay.
 type fakeProbers struct {
 	mu sync.Mutex
 
@@ -122,7 +120,6 @@ func (f *fakeProbers) leave() {
 	atomic.AddInt32(&f.inflight, -1)
 }
 
-// sleep waits for d and reports whether it finished before ctx was cancelled.
 func sleep(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		return ctx.Err() == nil
@@ -137,7 +134,6 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// snapshot reads a value out of the snapshot the way Prometheus would.
 func snapshot(t *testing.T, snap *metrics.Snapshot) map[string]float64 {
 	t.Helper()
 
@@ -148,9 +144,7 @@ func snapshot(t *testing.T, snap *metrics.Snapshot) map[string]float64 {
 	return out
 }
 
-// gatherSnapshot renders every series of the snapshot into a map keyed by name
-// and labels. It returns the error instead of failing so a prober, which runs on
-// a worker goroutine, can hand the reading to the test.
+// gatherSnapshot renders every series; it returns the error for use in a prober.
 func gatherSnapshot(snap *metrics.Snapshot) (map[string]float64, error) {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(snap.Collector())

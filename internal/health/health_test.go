@@ -65,9 +65,7 @@ func TestUnhealthy(t *testing.T) {
 	}
 }
 
-// TestUnhealthyReportsATruncatedCycle covers the one-shot gate: the sampler
-// stamps a pass the deadline cut short as done, so a config whose cycle used the
-// whole deadline must not read as complete.
+// TestUnhealthyReportsATruncatedCycle pins that a cycle cut short is incomplete.
 func TestUnhealthyReportsATruncatedCycle(t *testing.T) {
 	const deadline = 150 * time.Second
 	now := time.Now()

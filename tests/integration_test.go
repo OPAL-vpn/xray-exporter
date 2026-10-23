@@ -18,18 +18,15 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
-// testRecord is the address the local resolver answers with. It is in the
-// documentation range, so no real answer can be mistaken for it.
+// testRecord is in the documentation range, so no real answer can match it.
 const testRecord = "198.51.100.7"
 
-// freedomConfig is a complete client config whose only outbound is freedom: the
-// probe path is real, but no remote server is involved.
+// freedomConfig has only a freedom outbound: the probe path is real, no remote
+// host is involved.
 const freedomConfig = `{"outbounds":[{"protocol":"freedom","settings":{}}]}`
 
-// testDNSServer serves testRecord for every A query on a loopback UDP port and
-// returns that port. Answers are fixed, so a lookup that returns the record
-// proves it reached this server — and therefore left through the injected
-// dokodemo-door inbound rather than through a system resolver.
+// testDNSServer serves testRecord for every A query and returns its port, so a
+// lookup that returns the record proves it left through the injected inbound.
 func testDNSServer(t *testing.T) int {
 	t.Helper()
 
@@ -70,8 +67,7 @@ func testDNSServer(t *testing.T) int {
 	return pc.LocalAddr().(*net.UDPAddr).Port
 }
 
-// testManagerFor starts one freedom instance against upstream and returns the
-// manager that owns it.
+// testManagerFor starts one freedom instance against upstream.
 func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config) *xrayproc.Manager {
 	t.Helper()
 
@@ -89,10 +85,8 @@ func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config)
 	return manager
 }
 
-// TestInjectedDNSInboundAnswersThroughTheTunnel pins the dokodemo-door inbound
-// the exporter injects: a query sent to the instance's DNS port must reach the
-// configured upstream and come back with its answer. Nothing else in the suite
-// exercises that inbound, so a wiring defect would surface only at deployment.
+// TestInjectedDNSInboundAnswersThroughTheTunnel pins the injected
+// dokodemo-door inbound: a query must reach upstream and come back.
 func TestInjectedDNSInboundAnswersThroughTheTunnel(t *testing.T) {
 	upstream := xraycfg.Upstream{Host: "127.0.0.1", Port: testDNSServer(t)}
 	inst := testManagerFor(t, upstream, xraycfg.Config{Name: "freedom", Raw: []byte(freedomConfig)}).Instances()[0]
@@ -105,8 +99,8 @@ func TestInjectedDNSInboundAnswersThroughTheTunnel(t *testing.T) {
 		t.Fatalf("ProbeTunnelDNS(%s, %s): Up = false, Err = %v", addr, domain, res.Err)
 	}
 
-	// ProbeTunnelDNS reports up and round trip by design; the same port answers
-	// a full exchange below, which is what proves the reply is the local record.
+	// ProbeTunnelDNS reports up by design; the full exchange below proves the
+	// reply is the local record.
 	client := &dns.Client{Net: "udp", Timeout: 5 * time.Second}
 	query := new(dns.Msg)
 	query.SetQuestion(dns.Fqdn(domain), dns.TypeA)

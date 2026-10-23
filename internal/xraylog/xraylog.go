@@ -1,10 +1,6 @@
-// Package xraylog routes xray-core's log stream into slog.
-//
-// xray-core has no per-instance logging: app/log.New registers one handler for
-// the whole process, and every instance start replaces it. The exporter
-// therefore owns the global registration: Install once the instances are
-// running, and Capture around a start so that output produced while starting
-// can be attributed to the config that produced it.
+// Package xraylog routes xray-core's process-global log stream into slog.
+// xray registers one handler for the whole process and every instance start
+// replaces it, so Install runs after starts and Capture wraps a single start.
 package xraylog
 
 import (
@@ -17,13 +13,10 @@ import (
 	clog "github.com/xtls/xray-core/common/log"
 )
 
-// none is below every severity xray emits, so installing it drops the whole
-// stream. Severity_Unknown cannot mean that: Install reads it as "no minimum".
+// none is below every severity; Severity_Unknown already means "no minimum".
 const none clog.Severity = -1
 
 // ParseSeverity maps an XRAY_LOG_LEVEL spelling onto xray's severity ladder.
-// "none" yields a minimum below every severity, so nothing passes it. Case and
-// surrounding space are tolerated, as in xray's own parser.
 func ParseSeverity(s string) (clog.Severity, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "debug":
@@ -41,40 +34,26 @@ func ParseSeverity(s string) (clog.Severity, error) {
 }
 
 var (
-	// handlerMu serializes Install and Capture, which both swap the global
-	// handler and the record of what they installed.
+	// handlerMu serializes the global handler swaps.
 	handlerMu sync.Mutex
-	// current is the handler this package installed last. xray offers no way to
-	// read back the global handler, and RegisterHandler discards it, so Capture
-	// can only restore a handler remembered here.
+	// current is the handler installed last; xray cannot return the previous one.
 	current clog.Handler = discard{}
 )
 
-// discard is the handler in place before the first Install: it drops messages,
-// which is what xray's own nil handler does.
 type discard struct{}
 
 func (discard) Handle(clog.Message) {}
 
-// Install makes logger the destination of xray's process-global log stream,
-// with subsystem=xray on every line, and drops messages less severe than min.
-// A min of Severity_Unknown means no minimum. logger must not be nil.
-//
-// Every xray instance start re-registers its own handler, so Install belongs
-// after the instances are running.
+// Install makes logger the destination of xray's log stream. Severity_Unknown
+// means no minimum. Every instance start replaces the global handler, so
+// Install must run after the instances are running.
 func Install(logger *slog.Logger, min clog.Severity) {
 	swap(&bridge{logger: logger.With("subsystem", "xray"), min: min})
 }
 
-// Capture replaces xray's global handler with one that buffers messages until
-// the returned release is called. release restores the handler in place before
-// the capture and writes the buffered lines to logger with subsystem=xray and
-// the given config, so a start's output is attributed to the config being
-// started. The capture itself does not filter severities; the release logger's
-// handler decides what it keeps.
-//
-// release must be called once, after the start it wraps, and must not overlap
-// an Install: the manager sequences both.
+// Capture buffers xray's global stream until release is called. release
+// restores the previous handler and writes the buffered lines with the config
+// that produced them. It must be called once and not overlap an Install.
 func Capture() (release func(config string, logger *slog.Logger)) {
 	captured := &capture{}
 	previous := swap(captured)
@@ -88,8 +67,6 @@ func Capture() (release func(config string, logger *slog.Logger)) {
 	}
 }
 
-// swap installs h as the process's xray handler and returns the handler it
-// replaced.
 func swap(h clog.Handler) clog.Handler {
 	handlerMu.Lock()
 	defer handlerMu.Unlock()
@@ -100,7 +77,6 @@ func swap(h clog.Handler) clog.Handler {
 	return previous
 }
 
-// bridge is what Install registers.
 type bridge struct {
 	logger *slog.Logger
 	min    clog.Severity
@@ -114,8 +90,7 @@ func (b *bridge) Handle(msg clog.Message) {
 	write(b.logger, level, msg)
 }
 
-// accepts follows xray's ladder: severities count down from Debug, so a message
-// passes when it is no more verbose than min.
+// accepts follows xray's ladder: more verbose severities have lower values.
 func (b *bridge) accepts(severity clog.Severity) bool {
 	if b.min == clog.Severity_Unknown {
 		return true
@@ -123,7 +98,6 @@ func (b *bridge) accepts(severity clog.Severity) bool {
 	return severity <= b.min
 }
 
-// capture buffers messages until release drains them.
 type capture struct {
 	mu       sync.Mutex
 	messages []clog.Message
@@ -144,13 +118,12 @@ func (c *capture) drain() []clog.Message {
 	return messages
 }
 
-// write logs one xray message at level.
 func write(logger *slog.Logger, level slog.Level, msg clog.Message) {
 	logger.Log(context.Background(), level, msg.String())
 }
 
-// describe returns the xray severity and the slog level for msg. Access and DNS
-// messages carry no severity of their own, so they count as informational.
+// describe returns the severity and slog level. Access and DNS messages carry
+// no severity of their own and count as informational.
 func describe(msg clog.Message) (clog.Severity, slog.Level) {
 	general, ok := msg.(*clog.GeneralMessage)
 	if !ok {

@@ -17,14 +17,11 @@ import (
 
 const wantUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
-// probeHost is the host:port a probe should be pointed at for srv.
 func probeHost(srv *httptest.Server) string {
 	return strings.TrimPrefix(srv.URL, "https://")
 }
 
-// socksDialerFor returns a dialer through a fresh fake proxy that relays to the
-// target named in the request, and the proxy itself so a test can inspect what
-// arrived on the wire.
+// socksDialerFor returns a dialer through a fake proxy and that proxy.
 func socksDialerFor(t *testing.T) (probe.Dialer, *testSocksServer) {
 	t.Helper()
 
@@ -76,8 +73,7 @@ func TestProbeHTTPS(t *testing.T) {
 	}
 }
 
-// TestProbeHTTPSRejectsScheme pins the host form the probe accepts: config.Load
-// rejects a scheme, and the probe agrees instead of building https://https://…
+// TestProbeHTTPSRejectsScheme pins the host form config.Load also rejects.
 func TestProbeHTTPSRejectsScheme(t *testing.T) {
 	res := probe.ProbeHTTPS(context.Background(), nil, "https://youtube.com", time.Second, nil)
 
@@ -151,7 +147,6 @@ func TestProbeHTTPSTLSVerified(t *testing.T) {
 	}
 }
 
-// tlsServerFor serves cert on a loopback port and returns the server.
 func tlsServerFor(t *testing.T, cert tls.Certificate) *httptest.Server {
 	t.Helper()
 
@@ -184,8 +179,7 @@ func TestProbeHTTPSVerifiesPeerName(t *testing.T) {
 	cert, roots := testCertificate(t, "example.com")
 	srv := tlsServerFor(t, cert)
 
-	// The request addresses example.com as the tunnel would; the dialer serves
-	// it from the loopback listener.
+	// The request names example.com; the dialer serves it from loopback.
 	dialer := &redirectDialer{target: srv.Listener.Addr().String()}
 	res := probe.ProbeHTTPS(context.Background(), dialer, "example.com", 5*time.Second, roots)
 

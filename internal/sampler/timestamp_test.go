@@ -36,9 +36,8 @@ func TestTargetTimestampAdvances(t *testing.T) {
 	}
 }
 
-// TestTargetTimestampWaitsForThePair pins that the timestamp is stamped once,
-// after the HTTPS result exists: a scrape landing between the two probes must
-// not see a new attempt beside the previous cycle's status.
+// TestTargetTimestampWaitsForThePair pins that the timestamp is stamped after
+// the HTTPS result exists, so a scrape between probes sees one pair.
 func TestTargetTimestampWaitsForThePair(t *testing.T) {
 	const target = "a.test"
 
@@ -57,8 +56,7 @@ func TestTargetTimestampWaitsForThePair(t *testing.T) {
 	probers := fake.probers()
 	http := probers.HTTP
 	probers.HTTP = func(ctx context.Context, d probe.Dialer, host string, timeout time.Duration, roots *x509.CertPool) probe.HTTPResult {
-		// The DNS half has been published by now, so this is where a stamp taken
-		// too early would show. The reading is asserted on the test goroutine.
+		// A stamp taken before the pair completes would show here.
 		values, err := gatherSnapshot(snap)
 		got := reading{err: err}
 		if err == nil {

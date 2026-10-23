@@ -67,8 +67,7 @@ func TestZeroLatencyNotPublished(t *testing.T) {
 	snap := New()
 	snap.Seed("nl1", []string{"a.test"}, []config.Resolver{resolverDoH("cf", "https://cf.test/dns-query")}, seedTime)
 
-	// A successful probe whose timer never fired reports a zero duration. It
-	// must not become a latency sample.
+	// A successful probe with a zero timer must not become a latency sample.
 	snap.SetHTTP("nl1", "a.test", probe.HTTPResult{Up: true, Status: 200}, secondTime)
 	snap.SetDNS("nl1", "a.test", probe.DNSResult{Up: true}, secondTime)
 	snap.SetResolver("nl1", "cf", "doh", probe.ResolverResult{Up: true}, secondTime)
