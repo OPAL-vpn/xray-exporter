@@ -1,0 +1,12 @@
+# Copy ../examples/targets.yaml to ./targets.yaml and put your xray client
+# configs in ./xray/ (one JSON file per config; the filename stem is the
+# `config` label) before starting.
+services:
+  xray-exporter:
+    image: ghcr.io/anton-beep/xray-exporter:latest
+    restart: unless-stopped
+    ports:
+      - "9787:9787"
+    volumes:
+      - ./xray:/config/xray:ro
+      - ./targets.yaml:/config/targets.yaml:ro

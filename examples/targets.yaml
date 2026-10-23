@@ -1,0 +1,15 @@
+# Nothing is built in: every host and resolver below is an example. Drop what
+# you do not measure and add your own; an empty or absent file fails at startup.
+egress_check_url: https://api.ipify.org?format=text   # plain-text IP echo
+dns_probe_domain: example.com      # queried by DoH/DoT probes
+dns_upstream: 1.1.1.1:53           # forwarded to by the tunnel DNS inbound
+targets:
+  - host: youtube.com
+  - host: netflix.com
+  - host: gosuslugi.ru
+dns_resolvers:
+  - name: cloudflare
+    doh_url: https://cloudflare-dns.com/dns-query
+    dot_host: one.one.one.one
+  - name: quad9
+    doh_url: https://dns.quad9.net/dns-query
