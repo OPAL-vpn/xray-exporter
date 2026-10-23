@@ -186,7 +186,20 @@ func TestStartFreedomConfig(t *testing.T) {
 
 	waitDial(t, inst.SocksPort, 2*time.Second)
 
-	if got := socksConnect(t, inst.SocksPort, 53, "9.9.9.9"); got != 0x00 {
+	// The CONNECT target is a loopback listener, not a public address: xray replies
+	// after the upstream dial, so a target it cannot reach would fail the reply and
+	// make the test depend on the runner's routes.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on loopback: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("close loopback listener: %v", err)
+		}
+	})
+
+	if got := socksConnect(t, inst.SocksPort, listener.Addr().(*net.TCPAddr).Port, "127.0.0.1"); got != 0x00 {
 		t.Fatalf("socks CONNECT reply = %#x, want 0x00", got)
 	}
 }
