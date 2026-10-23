@@ -2,6 +2,7 @@ package probe_test
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"net"
 	"net/http"
@@ -134,5 +135,51 @@ func TestProbeHTTPSTLSVerified(t *testing.T) {
 	}
 	if !res.TLSVerified {
 		t.Errorf("TLSVerified = false, want true with the server certificate in the root pool (Err = %v)", res.Err)
+	}
+}
+
+// tlsServerFor serves cert on a loopback port and returns the server.
+func tlsServerFor(t *testing.T, cert tls.Certificate) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	return srv
+}
+
+func TestProbeHTTPSIPHostChecksPeerName(t *testing.T) {
+	cert, roots := testCertificate(t, "example.com")
+	srv := tlsServerFor(t, cert)
+
+	dialer, _ := socksDialerFor(t)
+	res := probe.ProbeHTTPS(context.Background(), dialer, probeHost(srv), 5*time.Second, roots)
+
+	if !res.Up {
+		t.Fatalf("Up = false, Err = %v", res.Err)
+	}
+	if res.TLSVerified {
+		t.Error("TLSVerified = true, want false: the trusted certificate names example.com, not the probed address")
+	}
+}
+
+func TestProbeHTTPSVerifiesPeerName(t *testing.T) {
+	cert, roots := testCertificate(t, "example.com")
+	srv := tlsServerFor(t, cert)
+
+	// The request addresses example.com as the tunnel would; the dialer serves
+	// it from the loopback listener.
+	dialer := &redirectDialer{target: srv.Listener.Addr().String()}
+	res := probe.ProbeHTTPS(context.Background(), dialer, "example.com", 5*time.Second, roots)
+
+	if !res.Up {
+		t.Fatalf("Up = false, Err = %v", res.Err)
+	}
+	if !res.TLSVerified {
+		t.Errorf("TLSVerified = false, want true for a trusted certificate issued to the probed name (Err = %v)", res.Err)
 	}
 }

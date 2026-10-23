@@ -124,18 +124,8 @@ func ProbeDoH(ctx context.Context, d Dialer, dohURL, domain string, timeout time
 		return ResolverResult{Err: fmt.Errorf("doh query pack: %w", err)}
 	}
 
-	transport := &http.Transport{
-		DialContext:       d.DialContext,
-		DisableKeepAlives: true,
-	}
-	defer transport.CloseIdleConnections()
-
-	client := &http.Client{
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	client := HTTPClient(d, timeout, nil)
+	defer client.CloseIdleConnections()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dohURL, bytes.NewReader(packed))
 	if err != nil {

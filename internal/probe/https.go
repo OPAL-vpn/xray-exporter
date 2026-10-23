@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// probeUserAgent is the fixed user agent every HTTPS probe sends, so the
-// request looks the same from every vantage point.
-const probeUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+// UserAgent is the fixed user agent every request the exporter sends, so a
+// probe looks the same from every vantage point.
+const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
 // HTTPResult is the outcome of one HTTPS probe.
 type HTTPResult struct {
@@ -33,6 +33,34 @@ type HTTPResult struct {
 	Total time.Duration
 	// Err is the transport error, if the request never produced a response.
 	Err error
+}
+
+// HTTPClient returns the HTTP client the package shares: connections go
+// through d, keep-alives are off, redirects come back as responses, and
+// certificates are verified against roots (nil means the system pool).
+// Verification runs in VerifyConnection so a caller can replace that callback
+// and turn a certificate error into a verdict; ProbeHTTPS does exactly that.
+func HTTPClient(d Dialer, timeout time.Duration, roots *x509.CertPool) *http.Client {
+	transport := &http.Transport{
+		DialContext:       d.DialContext,
+		DisableKeepAlives: true,
+		TLSClientConfig: &tls.Config{
+			// Verification runs by hand so it can be recorded or handed to a
+			// caller; verifyPeer checks both the chain and the peer name.
+			InsecureSkipVerify: true,
+			VerifyConnection: func(state tls.ConnectionState) error {
+				return verifyPeer(state, roots, state.ServerName)
+			},
+		},
+	}
+
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 // ProbeHTTPS issues GET https://<host>/ through d and reports what came back.
@@ -55,34 +83,23 @@ func ProbeHTTPS(ctx context.Context, d Dialer, host string, timeout time.Duratio
 		verifyErr  error
 	)
 
-	transport := &http.Transport{
-		DialContext:       d.DialContext,
-		DisableKeepAlives: true,
-		TLSClientConfig: &tls.Config{
-			// Verification is done by hand in VerifyConnection so a certificate
-			// error becomes a verdict rather than a failed probe.
-			InsecureSkipVerify: true,
-			VerifyConnection: func(state tls.ConnectionState) error {
-				tlsChecked = true
-				verifyErr = verifyPeer(state, roots)
-				return nil
-			},
-		},
-	}
-	defer transport.CloseIdleConnections()
+	client := HTTPClient(d, timeout, roots)
+	transport := client.Transport.(*http.Transport)
+	defer client.CloseIdleConnections()
 
-	client := &http.Client{
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	// A probe needs the certificate error as a verdict, not as a failed
+	// request: record it and let the handshake continue.
+	transport.TLSClientConfig.VerifyConnection = func(state tls.ConnectionState) error {
+		tlsChecked = true
+		verifyErr = verifyPeer(state, roots, probeName(state, target.Hostname()))
+		return nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return HTTPResult{Err: err}
 	}
-	req.Header.Set("User-Agent", probeUserAgent)
+	req.Header.Set("User-Agent", UserAgent)
 
 	trace := &httptrace.ClientTrace{
 		GotFirstResponseByte: func() { ttfb = time.Since(start) },
@@ -131,22 +148,40 @@ func probeURL(host string) (*url.URL, error) {
 	return target, nil
 }
 
-// verifyPeer checks the peer chain against roots, returning nil only when it
-// verifies. An empty ServerName verifies the chain without a name check.
-func verifyPeer(state tls.ConnectionState, roots *x509.CertPool) error {
+// probeName is the name the certificate is verified against: the SNI name when
+// one went out, otherwise the probed host, which Go omits from SNI when it is
+// an address literal.
+func probeName(state tls.ConnectionState, host string) string {
+	if state.ServerName != "" {
+		return state.ServerName
+	}
+	return host
+}
+
+// verifyPeer checks the peer chain against roots and then the leaf against
+// name, which may be a DNS name or an address literal. Both checks matter: a
+// chain that reaches a trusted root says nothing about who the certificate was
+// issued to.
+func verifyPeer(state tls.ConnectionState, roots *x509.CertPool, name string) error {
 	if len(state.PeerCertificates) == 0 {
 		return errors.New("no peer certificate")
 	}
 
+	leaf := state.PeerCertificates[0]
 	intermediates := x509.NewCertPool()
 	for _, cert := range state.PeerCertificates[1:] {
 		intermediates.AddCert(cert)
 	}
 
-	_, err := state.PeerCertificates[0].Verify(x509.VerifyOptions{
+	if _, err := leaf.Verify(x509.VerifyOptions{
 		Roots:         roots,
 		Intermediates: intermediates,
-		DNSName:       state.ServerName,
-	})
-	return err
+	}); err != nil {
+		return err
+	}
+	if name == "" {
+		return errors.New("no name to verify the certificate against")
+	}
+
+	return leaf.VerifyHostname(name)
 }

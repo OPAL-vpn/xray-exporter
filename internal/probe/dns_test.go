@@ -261,6 +261,9 @@ func TestProbeDoH(t *testing.T) {
 	if res.RTT <= 0 {
 		t.Errorf("RTT = %v, want > 0", res.RTT)
 	}
+	if requests := dialer.Requests(); len(requests) != 1 || requests[0] != srv.Listener.Addr().String() {
+		t.Errorf("dialer saw %v, want the DoH host %s", requests, srv.Listener.Addr())
+	}
 }
 
 func TestProbeDoHRejectsBadResponses(t *testing.T) {
