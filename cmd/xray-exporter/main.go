@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/app"
 )
@@ -22,7 +21,7 @@ func main() {
 func run() int {
 	once := flag.Bool("once", false, "run one measurement cycle, print a report and exit")
 	out := flag.String("out", "", "write the --once report to this file (mode 0600) instead of stdout")
-	deadline := flag.Duration("deadline", 5*time.Minute, "per-config deadline for --once")
+	deadline := flag.Duration("deadline", app.DefaultDeadline, "per-config deadline for --once")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 

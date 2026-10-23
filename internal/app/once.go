@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/health"
 	"github.com/OPAL-vpn/xray-exporter/internal/report"
@@ -16,7 +15,7 @@ import (
 func (a *application) once(ctx context.Context) error {
 	deadline := a.opts.Deadline
 	if deadline <= 0 {
-		deadline = 5 * time.Minute
+		deadline = DefaultDeadline
 	}
 
 	a.cycle(ctx, deadline)

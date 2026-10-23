@@ -21,6 +21,9 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
+// DefaultDeadline is the one-shot deadline when Options.Deadline is zero.
+const DefaultDeadline = 5 * time.Minute
+
 // Options are the command-line flags Run acts on.
 type Options struct {
 	// Once runs one measurement cycle, writes the report and returns instead of
@@ -29,7 +32,7 @@ type Options struct {
 	// Out is the one-shot report path. Empty writes the report to stdout.
 	Out string
 	// Deadline bounds one config's cycle in once mode. Once mode has no interval
-	// to halve, so the operator supplies the bound. Zero means 5m.
+	// to halve, so the operator supplies the bound. Zero means DefaultDeadline.
 	Deadline time.Duration
 	// Version is the build version stamped into xray_build_info. Empty is dev.
 	Version string
