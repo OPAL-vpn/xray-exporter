@@ -17,7 +17,6 @@ label), once per `INTERVAL` (default 5 min):
   `dokodemo-door` inbound forwarded to `dns_upstream`. Up means any DNS response.
 - **DoH and DoT through the tunnel**, for each configured resolver transport:
   can this tunnel carry encrypted DNS.
-- **Egress verification** at start and on reload (see [Egress](#egress)).
 
 ## Quick start
 
@@ -65,8 +64,7 @@ docker run --rm \
 
 `xray-exporter --once [--out FILE] [--deadline 5m]` skips the listener and the
 timer, runs one cycle, prints a human-readable table and exits non-zero when
-no config was found, or when one failed to start, did not verify egress, or did
-not finish its cycle.
+no config was found, or when one failed to start or did not finish its cycle.
 
 ## Configuration
 
@@ -77,12 +75,11 @@ sets.
 |---|---|---|
 | `LISTEN_ADDR` | `:9787` | metrics listener |
 | `XRAY_CONFIG_DIR` | `/config/xray` | config directory, one JSON per config |
-| `TARGETS_FILE` | `/config/targets.yaml` | targets, resolvers, egress URL |
+| `TARGETS_FILE` | `/config/targets.yaml` | targets and resolvers |
 | `INTERVAL` | `5m` | cycle period |
 | `WORKERS` | `8` | concurrent probes per config |
 | `PROBE_TIMEOUT` | `10s` | per HTTP/DNS probe |
 | `RESOLVER_TIMEOUT` | `5s` | per DoH/DoT probe |
-| `EGRESS_CACHE_TTL` | `1h` | how long the direct baseline IP is reused |
 | `XRAY_LOG_LEVEL` | `warning` | xray's own verbosity |
 | `XRAY_LOCATION_ASSET` | `/usr/local/share/xray` | geo asset directory |
 | `XRAY_LOG_FILE` | unset | mirror xray's stream into one file |
@@ -110,9 +107,6 @@ self-labelling.
 | `xray_resolver_up` | config, resolver, transport | doh / dot reachable |
 | `xray_resolver_lookup_seconds` | config, resolver, transport | resolver round trip |
 | `xray_resolver_timestamp_seconds` | config, resolver, transport | last attempt |
-| `xray_egress_verified` | config | 1 = traffic leaves through the tunnel |
-| `xray_egress_ip_info` | config, ip | 1, the observed egress address |
-| `xray_egress_timestamp_seconds` | config | last verification |
 | `xray_config_running` | config | instance is up |
 | `xray_config_info` | config, xray_version | 1 |
 | `xray_cycle_timestamp_seconds` | config | last completed cycle |
@@ -128,20 +122,16 @@ poison averages. A failed probe sets `up` to 0, moves the timestamp forward and
 keeps the last successful latency, so staleness is visible through the
 timestamp. Series disappear only with their config or target.
 
-## Egress
+## No direct traffic
 
-A config's `routing` can send probe traffic out directly, making the numbers
-describe the wrong path. The exporter compares the address `egress_check_url`
-sees through the tunnel with the address it sees on a **direct** request.
+The exporter sends no traffic outside a tunnel. HTTP and TLS probes, DoH, DoT
+and the UDP DNS probe all reach their peers through an xray instance's
+loopback inbound, so a config's `routing` decides the path. Only loopback is
+dialed directly: the SOCKS port and DNS inbound the exporter starts, and the
+free-port probe.
 
-The direct request is the only traffic this process sends outside a tunnel:
-
-- the baseline is cached for `EGRESS_CACHE_TTL` (default `1h`), one request per
-  TTL regardless of config count;
-- the tunnel check runs once per config at start and on reload;
-- equal addresses mean direct routing: `xray_egress_verified{config}` is 0 and
-  an ERROR names the config. Probes still run; the verdict sits beside their
-  values.
+A tunnel that is down therefore surfaces as failed probes and
+`xray_config_running` 0, not as measurements from a direct path.
 
 ## Logs
 
@@ -183,5 +173,5 @@ xray-exporter is licensed under the MIT Licence — see `LICENSE`.
 
 xray-core is licensed under MPL-2.0 and is linked into this binary as a Go
 dependency; the image contains no separate xray executable. The injection
-approach and the egress-verification idea are derived from
-`github.com/batonogov/xray-health-exporter` (MIT) — see `NOTICE`.
+approach is derived from `github.com/batonogov/xray-health-exporter` (MIT) —
+see `NOTICE`.

@@ -49,7 +49,7 @@ Prometheus lives elsewhere.
 
 | Row | Panels |
 |---|---|
-| Overview | configs up, configs with verified egress, cycle age, 15m probe success ratio |
+| Overview | configs up, cycle age, 15m probe success ratio |
 | Targets | target status timeline, latest per target table, TTFB, total request time, tunnel DNS lookup, HTTP status timeline, TLS verified timeline |
 | Resolvers | resolver availability timeline, resolver lookup latency |
 | Config | config health table, reload errors |
