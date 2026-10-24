@@ -11,7 +11,6 @@ type configState struct {
 	version   string
 	targets   map[string]*targetState
 	resolvers map[resolverKey]*resolverState
-	egress    egressState
 	cycle     cycleState
 }
 
@@ -38,12 +37,6 @@ type resolverState struct {
 	at     time.Time
 	result probe.ResolverResult
 	lookup *float64
-}
-
-type egressState struct {
-	at       time.Time
-	ip       string
-	verified bool
 }
 
 type cycleState struct {

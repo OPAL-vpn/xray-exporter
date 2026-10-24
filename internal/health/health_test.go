@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 )
 
@@ -40,7 +39,6 @@ func TestUnhealthy(t *testing.T) {
 	healthy := metrics.ConfigExport{
 		Name:    "nl1",
 		Running: true,
-		Egress:  metrics.EgressExport{Verified: true},
 		Cycle:   metrics.CycleExport{Done: true, Duration: 2 * time.Second},
 	}
 	if reasons := Reasons(metrics.Export{Configs: []metrics.ConfigExport{healthy}}, deadline); len(reasons) != 0 {
@@ -48,13 +46,12 @@ func TestUnhealthy(t *testing.T) {
 	}
 
 	broken := metrics.ConfigExport{
-		Name:   "nl1",
-		Egress: metrics.EgressExport{},
-		Cycle:  metrics.CycleExport{},
+		Name:  "nl1",
+		Cycle: metrics.CycleExport{},
 	}
 	reasons := Reasons(metrics.Export{Configs: []metrics.ConfigExport{broken}}, deadline)
 	joined := strings.Join(reasons, "; ")
-	for _, want := range []string{"not running", "egress not verified", "cycle did not complete"} {
+	for _, want := range []string{"not running", "cycle did not complete"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Reasons(broken config) = %v, want it to mention %q", reasons, want)
 		}
@@ -73,7 +70,6 @@ func TestUnhealthyReportsATruncatedCycle(t *testing.T) {
 	snap := metrics.New()
 	snap.Seed("nl1", []string{"a.test"}, nil, now)
 	snap.SetConfig("nl1", true, "26.1.1")
-	snap.SetEgress("nl1", egress.Result{IP: "203.0.113.7", Verified: true}, now)
 
 	snap.SetCycle("nl1", now, deadline, 1)
 	reasons := Reasons(snap.Export(), deadline)

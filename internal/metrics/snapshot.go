@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
@@ -121,23 +120,6 @@ func (s *Snapshot) SetBuildInfo(version, goVersion string) {
 
 	s.buildVersion = version
 	s.buildGoVersion = goVersion
-}
-
-// SetEgress records a verdict, keeping the last observed address when the check
-// fails.
-func (s *Snapshot) SetEgress(config string, r egress.Result, at time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cfg, ok := s.configs[config]
-	if !ok {
-		return
-	}
-	cfg.egress.at = at
-	cfg.egress.verified = r.Verified
-	if r.IP != "" {
-		cfg.egress.ip = r.IP
-	}
 }
 
 func (s *Snapshot) SetCycle(config string, at time.Time, dur time.Duration, targets int) {

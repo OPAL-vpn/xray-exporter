@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
@@ -16,7 +15,6 @@ func TestExport(t *testing.T) {
 		{Name: "cf", DoHURL: "https://cf.test/dns-query", DoTHost: "cf.test"},
 	}, seedTime)
 	snap.SetConfig("nl1", true, "v26.10.21")
-	snap.SetEgress("nl1", egress.Result{IP: "203.0.113.7", Verified: true}, secondTime)
 	snap.SetCycle("nl1", secondTime, 900*time.Millisecond, 2)
 
 	httpResult := probe.HTTPResult{Up: true, Status: 200, TLSVerified: true, TTFB: 120 * time.Millisecond, Total: 300 * time.Millisecond}
@@ -34,9 +32,6 @@ func TestExport(t *testing.T) {
 	cfg := exp.Configs[0]
 	if cfg.Name != "nl1" || !cfg.Running || cfg.XrayVersion != "v26.10.21" {
 		t.Errorf("config row = %+v, want nl1 running with version v26.10.21", cfg)
-	}
-	if cfg.Egress.IP != "203.0.113.7" || !cfg.Egress.Verified {
-		t.Errorf("egress row = %+v, want 203.0.113.7 verified", cfg.Egress)
 	}
 	if !cfg.Cycle.Done || cfg.Cycle.Duration != 900*time.Millisecond || cfg.Cycle.Targets != 2 {
 		t.Errorf("cycle row = %+v, want a completed 900ms cycle over 2 targets", cfg.Cycle)

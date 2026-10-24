@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
@@ -18,7 +17,6 @@ func TestAllNamesCoverEverything(t *testing.T) {
 	}, seedTime)
 	snap.SetConfig("nl1", true, "v26.10.21")
 	snap.SetBuildInfo("v1", "go1.27.1")
-	snap.SetEgress("nl1", egress.Result{IP: "203.0.113.7", Verified: true}, secondTime)
 	snap.SetCycle("nl1", secondTime, time.Second, 1)
 	snap.SetHTTP("nl1", "a.test", probe.HTTPResult{Up: true, Status: 200, TLSVerified: true, TTFB: time.Millisecond, Total: 2 * time.Millisecond}, secondTime)
 	snap.SetDNS("nl1", "a.test", probe.DNSResult{Up: true, RTT: time.Millisecond}, secondTime)
@@ -51,7 +49,7 @@ func TestAllNamesCoverEverything(t *testing.T) {
 		}
 	}
 
-	if got, want := len(AllNames()), 22; got != want {
+	if got, want := len(AllNames()), 19; got != want {
 		t.Errorf("AllNames has %d names, want the %d in the spec", got, want)
 	}
 	prometheusName := regexp.MustCompile(`^xray_[a-z0-9_]+$`)

@@ -73,15 +73,6 @@ var (
 	resolverTimestamp = newMetricDef("resolver_timestamp_seconds",
 		"When the resolver was last attempted.",
 		"config", "resolver", "transport")
-	egressVerified = newMetricDef("egress_verified",
-		"Whether the config's traffic leaves through its tunnel.",
-		"config")
-	egressIPInfo = newMetricDef("egress_ip_info",
-		"The egress address the tunnel was observed to use.",
-		"config", "ip")
-	egressTimestamp = newMetricDef("egress_timestamp_seconds",
-		"When egress was last verified.",
-		"config")
 	configRunning = newMetricDef("config_running",
 		"Whether the config's xray instance is up.",
 		"config")
@@ -111,7 +102,6 @@ var allMetrics = []*metricDef{
 	probeUp, probeHTTPStatus, probeTLSOk, probeTTFB, probeTotal,
 	targetTimestamp, dnsUp, dnsLookup,
 	resolverUp, resolverLookup, resolverTimestamp,
-	egressVerified, egressIPInfo, egressTimestamp,
 	configRunning, configInfo,
 	cycleTimestamp, cycleDuration, cycleTargets,
 	reloadTotal, reloadErrors,

@@ -56,15 +56,6 @@ func renderConfig(r *renderer, cfg metrics.ConfigExport) {
 	r.printf("\n==== config: %s ====\n", cfg.Name)
 	r.printf("xray: %s\n", orAbsent(cfg.XrayVersion))
 
-	verdict := "verified"
-	if !cfg.Egress.Verified {
-		verdict = "NOT VERIFIED"
-	}
-	r.printf("egress: %s %s\n", orAbsent(cfg.Egress.IP), verdict)
-	if !cfg.Egress.Verified {
-		r.printf("warning: egress not verified (traffic may leave directly)\n")
-	}
-
 	r.table(func(t *renderer) {
 		t.printf("target\tstatus\ttls\tttfb\ttotal\tdns\n")
 		for _, target := range cfg.Targets {

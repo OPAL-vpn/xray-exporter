@@ -56,14 +56,6 @@ func collectConfig(ch chan<- prometheus.Metric, name string, cfg *configState) {
 		ch <- prometheus.MustNewConstMetric(configInfo.desc, prometheus.GaugeValue, 1, name, cfg.version)
 	}
 
-	ch <- prometheus.MustNewConstMetric(egressVerified.desc, prometheus.GaugeValue, boolValue(cfg.egress.verified), name)
-	if !cfg.egress.at.IsZero() {
-		ch <- prometheus.MustNewConstMetric(egressTimestamp.desc, prometheus.GaugeValue, unixSeconds(cfg.egress.at), name)
-	}
-	if cfg.egress.ip != "" {
-		ch <- prometheus.MustNewConstMetric(egressIPInfo.desc, prometheus.GaugeValue, 1, name, cfg.egress.ip)
-	}
-
 	if cfg.cycle.done {
 		ch <- prometheus.MustNewConstMetric(cycleTimestamp.desc, prometheus.GaugeValue, unixSeconds(cfg.cycle.at), name)
 		ch <- prometheus.MustNewConstMetric(cycleDuration.desc, prometheus.GaugeValue, cfg.cycle.dur.Seconds(), name)

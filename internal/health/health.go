@@ -24,9 +24,6 @@ func Reasons(exp metrics.Export, deadline time.Duration) []string {
 		if !cfg.Running {
 			reasons = append(reasons, cfg.Name+" not running")
 		}
-		if !cfg.Egress.Verified {
-			reasons = append(reasons, cfg.Name+" egress not verified")
-		}
 		if !cfg.Cycle.Done || Overran(cfg.Cycle, deadline) {
 			reasons = append(reasons, cfg.Name+" cycle did not complete")
 		}

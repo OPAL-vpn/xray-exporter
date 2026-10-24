@@ -106,68 +106,6 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (instance) (xray_egress_verified{instance=~\"$instance\",config=~\"$config\"})",
-          "refId": "A",
-          "legendFormat": "{{instance}}",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "title": "Egress verified",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "noValue": "\u2014",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
                 "color": "green",
                 "value": null
               },
@@ -188,7 +126,7 @@
       "gridPos": {
         "h": 6,
         "w": 4,
-        "x": 8,
+        "x": 4,
         "y": 1
       },
       "options": {
@@ -255,8 +193,8 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 12,
-        "x": 12,
+        "w": 16,
+        "x": 8,
         "y": 1
       },
       "options": {
@@ -1163,17 +1101,6 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_egress_ip_info{instance=~\"$instance\",config=~\"$config\"}",
-          "refId": "C",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
           "expr": "xray_cycle_duration_seconds{instance=~\"$instance\",config=~\"$config\"}",
           "refId": "D",
           "instant": true,
@@ -1198,14 +1125,13 @@
             "renameByName": {
               "Value #A": "running",
               "Value #B": "config info",
-              "Value #C": "egress info",
               "Value #D": "cycle duration (s)"
             }
           }
         }
       ],
       "type": "table",
-      "description": "The xray_version and ip label columns carry the version and the observed egress address."
+      "description": "The xray_version label column carries the xray version of each running instance."
     },
     {
       "datasource": {

@@ -12,12 +12,11 @@ import (
 
 // export builds one config with a hostname target, an IP-literal target and a
 // DoH resolver.
-func export(verified bool) metrics.Export {
+func export() metrics.Export {
 	return metrics.Export{Configs: []metrics.ConfigExport{{
 		Name:        "nl1",
 		Running:     true,
 		XrayVersion: "v26.10.21",
-		Egress:      metrics.EgressExport{IP: "203.0.113.7", Verified: verified},
 		Cycle:       metrics.CycleExport{Done: true, Duration: 2 * time.Second, Targets: 2},
 		Targets: []metrics.TargetExport{
 			{
@@ -79,7 +78,7 @@ func row(t *testing.T, out, name string) string {
 }
 
 func TestRender(t *testing.T) {
-	out := render(t, export(true))
+	out := render(t, export())
 
 	if !strings.HasPrefix(out, "xray-exporter report ") {
 		t.Errorf("report does not start with its header line:\n%s", out)
@@ -89,9 +88,6 @@ func TestRender(t *testing.T) {
 	}
 	if !strings.Contains(out, "xray: v26.10.21") {
 		t.Errorf("report lacks the xray version:\n%s", out)
-	}
-	if !strings.Contains(out, "egress: 203.0.113.7 verified") {
-		t.Errorf("report lacks the verified egress verdict:\n%s", out)
 	}
 
 	host := row(t, out, "a.test")
@@ -122,21 +118,9 @@ func TestRender(t *testing.T) {
 	}
 }
 
-func TestRenderEgressWarning(t *testing.T) {
-	out := render(t, export(false))
-
-	if !strings.Contains(out, "egress not verified") {
-		t.Errorf("report for unverified egress lacks the warning:\n%s", out)
-	}
-	if !strings.Contains(out, "NOT VERIFIED") {
-		t.Errorf("report for unverified egress lacks the verdict:\n%s", out)
-	}
-}
-
 func TestRenderFailedTarget(t *testing.T) {
 	exp := metrics.Export{Configs: []metrics.ConfigExport{{
-		Name:   "nl1",
-		Egress: metrics.EgressExport{Verified: true},
+		Name: "nl1",
 		Targets: []metrics.TargetExport{{
 			Target:  "down.test",
 			HasHTTP: true,

@@ -37,9 +37,6 @@ func TestSeedPublishesZerosAndNoLatency(t *testing.T) {
 	if got := mustSample(t, samples, "xray_config_running", labels("config", "nl1")); got != 0 {
 		t.Errorf("xray_config_running = %v, want 0", got)
 	}
-	if got := mustSample(t, samples, "xray_egress_verified", labels("config", "nl1")); got != 0 {
-		t.Errorf("xray_egress_verified = %v, want 0", got)
-	}
 
 	for _, name := range []string{
 		"xray_probe_ttfb_seconds",
@@ -52,10 +49,8 @@ func TestSeedPublishesZerosAndNoLatency(t *testing.T) {
 		}
 	}
 
-	// No verification or cycle has happened yet, and no xray version is known.
+	// No cycle has happened yet, and no xray version is known.
 	for _, name := range []string{
-		"xray_egress_ip_info",
-		"xray_egress_timestamp_seconds",
 		"xray_config_info",
 		"xray_cycle_timestamp_seconds",
 		"xray_cycle_duration_seconds",

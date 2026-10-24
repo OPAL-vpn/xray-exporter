@@ -16,16 +16,9 @@ type ConfigExport struct {
 	Name        string
 	Running     bool
 	XrayVersion string
-	Egress      EgressExport
 	Cycle       CycleExport
 	Targets     []TargetExport
 	Resolvers   []ResolverExport
-}
-
-// EgressExport is the last verdict; IP is empty when it could not be fetched.
-type EgressExport struct {
-	IP       string
-	Verified bool
 }
 
 type CycleExport struct {
@@ -72,7 +65,6 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		Name:        name,
 		Running:     cfg.running,
 		XrayVersion: cfg.version,
-		Egress:      EgressExport{IP: cfg.egress.ip, Verified: cfg.egress.verified},
 		Cycle: CycleExport{
 			Done:     cfg.cycle.done,
 			At:       cfg.cycle.at,
