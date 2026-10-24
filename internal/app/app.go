@@ -44,7 +44,7 @@ func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error 
 		opts.Version = "dev"
 	}
 
-	a, err := newApplication(ctx, env, opts, logger)
+	a, err := newApplication(env, opts, logger)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ type application struct {
 }
 
 // newApplication loads the inputs and starts every instance.
-func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Logger) (*application, error) {
+func newApplication(env Env, opts Options, logger *slog.Logger) (*application, error) {
 	targets, upstream, err := loadTargets(env.TargetsFile)
 	if err != nil {
 		return nil, err
