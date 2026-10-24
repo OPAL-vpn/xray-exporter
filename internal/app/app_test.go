@@ -18,7 +18,6 @@ import (
 	clog "github.com/xtls/xray-core/common/log"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
@@ -94,12 +93,10 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 			Interval:     time.Hour,
 			Workers:      1,
 			ProbeTimeout: time.Second,
-			EgressTTL:    time.Minute,
 		},
 		logger:   logger,
 		snap:     metrics.New(),
 		targets:  &config.Targets{EgressCheckURL: echo.URL, DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
-		verifier: egress.New(echo.URL, time.Minute, time.Second),
 		upstream: xraycfg.Upstream{Host: "9.9.9.9", Port: 53},
 		manager:  testManager(logger),
 		configs:  []xraycfg.Config{{Name: "nl1"}},
@@ -108,7 +105,6 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 	a.snap.SetBuildInfo("test", "go-test")
 	a.snap.Seed("nl1", []string{"example.com"}, nil, time.Now())
 	a.snap.SetConfig("nl1", true, "26.1.1")
-	a.snap.SetEgress("nl1", egress.Result{IP: "203.0.113.7", Verified: true}, time.Now())
 
 	a.reload(context.Background())
 	defer a.interruptCycle()

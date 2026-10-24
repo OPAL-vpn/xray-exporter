@@ -1,5 +1,5 @@
 // Package app wires the exporter into a process: inputs, xray instances,
-// measurement cycles, egress checks, /metrics, reloads and the one-shot report.
+// measurement cycles, /metrics, reloads and the one-shot report.
 package app
 
 import (
@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
@@ -57,8 +56,8 @@ func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error 
 	return a.serve(ctx)
 }
 
-// application is the process state. mu guards targets, manager, verifier and
-// upstream; a reload interrupts the running cycle before writing them.
+// application is the process state. mu guards targets, manager and upstream; a
+// reload interrupts the running cycle before writing them.
 type application struct {
 	env        Env
 	opts       Options
@@ -71,7 +70,6 @@ type application struct {
 	mu       sync.RWMutex
 	targets  *config.Targets
 	manager  *xrayproc.Manager
-	verifier *egress.Verifier
 	upstream xraycfg.Upstream
 
 	// configs and seeded belong to the reload goroutine.
@@ -83,8 +81,7 @@ type application struct {
 	cancel   context.CancelFunc
 }
 
-// newApplication loads the inputs and starts every instance. The egress
-// baseline is fetched eagerly so a bad echo URL fails in the first log line.
+// newApplication loads the inputs and starts every instance.
 func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Logger) (*application, error) {
 	targets, upstream, err := loadTargets(env.TargetsFile)
 	if err != nil {
@@ -113,7 +110,6 @@ func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Log
 		logFile:    logFile,
 		snap:       metrics.New(),
 		targets:    targets,
-		verifier:   egress.New(targets.EgressCheckURL, env.EgressTTL, env.ProbeTimeout),
 		upstream:   upstream,
 		configs:    cfgs,
 		seeded:     make(map[string]struct{}, len(cfgs)),
@@ -123,7 +119,6 @@ func newApplication(ctx context.Context, env Env, opts Options, logger *slog.Log
 
 	a.apply(cfgs)
 	a.seed(time.Now())
-	a.verifyEgress(ctx)
 	return a, nil
 }
 

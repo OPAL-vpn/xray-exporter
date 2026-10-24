@@ -1,13 +1,9 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"time"
 
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
-	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
-	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
@@ -65,40 +61,4 @@ func (a *application) seed(now time.Time) {
 		}
 	}
 	a.seeded = keep
-}
-
-// verifyEgress checks every running config; a stopped config loses its verdict
-// rather than keeping the last green one.
-func (a *application) verifyEgress(ctx context.Context) {
-	a.mu.RLock()
-	verifier := a.verifier
-	a.mu.RUnlock()
-
-	if _, err := verifier.Baseline(ctx); err != nil {
-		a.logger.Warn("egress baseline unavailable", "error", err)
-	}
-
-	instances := make(map[string]*xrayproc.Instance, len(a.configs))
-	for _, inst := range a.instances() {
-		instances[inst.Name] = inst
-	}
-
-	for _, cfg := range a.configs {
-		inst, running := instances[cfg.Name]
-		if !running {
-			a.snap.SetEgress(cfg.Name, egress.Result{}, time.Now())
-			continue
-		}
-
-		result := verifier.Check(ctx, probe.NewSocksDialer(netutil.LoopbackAddr(inst.SocksPort), a.env.ProbeTimeout))
-		a.snap.SetEgress(inst.Name, result, time.Now())
-		switch {
-		case result.Verified:
-			a.logger.Debug("egress verified", "config", inst.Name, "ip", result.IP)
-		case result.Err != nil:
-			a.logger.Warn("egress check failed", "config", inst.Name, "error", result.Err)
-		default:
-			a.logger.Error("egress not verified", "config", inst.Name, "ip", result.IP)
-		}
-	}
 }

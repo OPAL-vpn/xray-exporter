@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
@@ -27,7 +26,6 @@ func (a *application) reload(ctx context.Context) {
 		restartedAll = upstream != a.upstream
 		a.upstream = upstream
 		a.targets = targets
-		a.verifier = egress.New(targets.EgressCheckURL, a.env.EgressTTL, a.env.ProbeTimeout)
 		a.mu.Unlock()
 
 		if restartedAll {
@@ -72,7 +70,6 @@ func (a *application) reload(ctx context.Context) {
 	}
 
 	a.seed(time.Now())
-	a.verifyEgress(ctx)
 
 	if applied {
 		a.snap.IncReload()
