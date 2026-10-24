@@ -27,7 +27,6 @@ type Resolver struct {
 // Targets is the parsed targets.yaml. Nothing is defaulted: a missing field is
 // an error.
 type Targets struct {
-	EgressCheckURL string     `yaml:"egress_check_url"`
 	DNSProbeDomain string     `yaml:"dns_probe_domain"`
 	DNSUpstream    string     `yaml:"dns_upstream"`
 	Targets        []Target   `yaml:"targets"`
@@ -58,9 +57,6 @@ func fileError(path string, err error) error {
 }
 
 func (t *Targets) validate() error {
-	if strings.TrimSpace(t.EgressCheckURL) == "" {
-		return errors.New("egress_check_url is required")
-	}
 	if strings.TrimSpace(t.DNSProbeDomain) == "" {
 		return errors.New("dns_probe_domain is required")
 	}

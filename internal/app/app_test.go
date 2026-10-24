@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -74,13 +73,8 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
-	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "203.0.113.7")
-	}))
-	defer echo.Close()
-
 	targetsPath := filepath.Join(t.TempDir(), "targets.yaml")
-	targetsBody := fmt.Sprintf("egress_check_url: %s\ndns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n", echo.URL)
+	targetsBody := "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n"
 	if err := os.WriteFile(targetsPath, []byte(targetsBody), 0o644); err != nil {
 		t.Fatalf("write targets: %v", err)
 	}
@@ -96,7 +90,7 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 		},
 		logger:   logger,
 		snap:     metrics.New(),
-		targets:  &config.Targets{EgressCheckURL: echo.URL, DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
+		targets:  &config.Targets{DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
 		upstream: xraycfg.Upstream{Host: "9.9.9.9", Port: 53},
 		manager:  testManager(logger),
 		configs:  []xraycfg.Config{{Name: "nl1"}},

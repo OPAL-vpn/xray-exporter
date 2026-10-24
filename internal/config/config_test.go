@@ -19,8 +19,7 @@ func writeTargetsFile(t *testing.T, body string) string {
 	return path
 }
 
-const validBody = `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+const validBody = `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -42,9 +41,6 @@ func TestLoadValidTargets(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if targets.EgressCheckURL != "https://api.ipify.org?format=text" {
-		t.Errorf("EgressCheckURL = %q", targets.EgressCheckURL)
-	}
 	if targets.DNSProbeDomain != "example.com" {
 		t.Errorf("DNSProbeDomain = %q", targets.DNSProbeDomain)
 	}
@@ -88,8 +84,7 @@ func TestLoadValidTargets(t *testing.T) {
 }
 
 func TestLoadRejectsUnknownField(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -112,25 +107,22 @@ dns_resolvers:
 	}
 }
 
-func TestLoadRequiresEgressCheckURL(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+func TestLoadRejectsEgressCheckURL(t *testing.T) {
+	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
+dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
-dns_resolvers:
-  - name: cloudflare
-    doh_url: https://cloudflare-dns.com/dns-query
 `)
 
 	err := loadError(t, path)
-	if !strings.Contains(err, "targets.yaml: egress_check_url is required") {
-		t.Errorf("error %q does not require egress_check_url", err)
+	if !strings.Contains(err, "egress_check_url") {
+		t.Errorf("error %q does not name egress_check_url", err)
 	}
 }
 
 func TestLoadRequiresTargets(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets: []
 `)
@@ -142,8 +134,7 @@ targets: []
 }
 
 func TestLoadRejectsDuplicateTarget(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -157,8 +148,7 @@ targets:
 }
 
 func TestLoadRequiresResolverTransport(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -173,8 +163,7 @@ dns_resolvers:
 }
 
 func TestLoadRejectsDuplicateResolver(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -192,8 +181,7 @@ dns_resolvers:
 }
 
 func TestLoadRejectsDNSUpstreamWithoutPort(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1
 targets:
   - host: youtube.com
@@ -228,8 +216,7 @@ func loadError(t *testing.T, path string) string {
 
 // TestLoadRejectsSchemeInHost covers the form that used to break the DNS probe.
 func TestLoadRejectsSchemeInHost(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -244,8 +231,7 @@ targets:
 
 // TestLoadNormalizesHosts pins the accepted forms and trimming.
 func TestLoadNormalizesHosts(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+	path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -293,8 +279,7 @@ func TestLoadRejectsUnparseableHosts(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
-dns_probe_domain: example.com
+			path := writeTargetsFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: "`+tc.host+`"

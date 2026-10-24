@@ -1,6 +1,5 @@
 # Nothing is built in: every host and resolver below is an example. Drop what
 # you do not measure and add your own; an empty or absent file fails at startup.
-egress_check_url: https://api.ipify.org?format=text   # plain-text IP echo
 dns_probe_domain: example.com      # queried by DoH/DoT probes
 dns_upstream: 1.1.1.1:53           # forwarded to by the tunnel DNS inbound
 targets:
