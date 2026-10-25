@@ -7,7 +7,7 @@ is served at `/metrics`.
 
 ## What it measures
 
-For every config in the config set (a filename stem, or the panel's `remarks`;
+For every config in the config set (a filename stem, or the panel's label;
 see [Config sources](#config-sources)), once per `INTERVAL` (default 5 min):
 
 - **HTTPS through the tunnel**, for every target: status, certificate verdict,
@@ -145,7 +145,8 @@ a fetch failure, and the remnawave source fails closed:
   their timestamps move to the failure time
 - no measurement cycle runs
 - `xray_exporter_config_fetch_errors_total` moves, while
-  `xray_exporter_config_fetch_timestamp_seconds` keeps naming the last success
+  `xray_exporter_config_fetch_timestamp_seconds` keeps the time of the last
+  success
 
 The last good bytes are kept only to name those configs; they are never started
 from that cache. Recovery is a successful fetch, which applies its set normally.
@@ -172,14 +173,15 @@ not on the reload error counter.
 
 Labels come from the panel: a sanitised `remarks`, else the first outbound's
 `address-port`, else `config-N` in array order; duplicates get `-2`, `-3`, … and
-a label never fails the fetch. Renaming a host is a new series and the old one
-goes stale.
+a label never fails the fetch. Renaming a host is a new series and the old
+series is dropped.
 
 ### The directory source is unchanged
 
 It is read at startup and on `SIGHUP`, never on a timer. A startup with an
 empty or unreadable directory is fatal. On `SIGHUP` a read error keeps the
-previous set and counts a reload error, while a readable empty directory is
+previous set, counts a reload error and increments
+`xray_exporter_config_fetch_errors_total`, while a readable empty directory is
 authoritative and stops every config. Its reload errors keep their old meaning:
 a config that fails to start makes the reload an error.
 
@@ -247,7 +249,7 @@ timestamp. Series disappear only with their config or target.
 
 Four queries cover the fetch. The three staleness queries are gated on
 `source_info{type="remnawave"}`: directory mode stamps the fetch timestamp only
-on `SIGHUP`, so its age says nothing about health.
+at startup and on `SIGHUP`, so its age says nothing about health.
 
 ```promql
 # stale fetch: no success for longer than three default 5m refreshes
@@ -266,6 +268,10 @@ rate(xray_exporter_config_fetch_errors_total[15m])
 increase(xray_exporter_config_fetch_total[15m]) == 0
   and on() (count(xray_exporter_config_source_info{type="remnawave"}) > 0)
 ```
+
+These windows assume the default `refresh: 5m`; scale `900` and `15m` to three
+refreshes, and with `refresh: 0` drop the stale-fetch and stalled-loop queries,
+which cannot distinguish a configured pause from a stall.
 
 A fetch outage also blanks the fleet: every known config sits at
 `xray_config_running` 0 while the timestamp ages. An empty subscription is the
