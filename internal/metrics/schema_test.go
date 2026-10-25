@@ -24,6 +24,10 @@ func TestAllNamesCoverEverything(t *testing.T) {
 	snap.SetResolver("nl1", "cf", "dot", probe.ResolverResult{Up: true, RTT: time.Millisecond}, secondTime)
 	snap.IncReload()
 	snap.IncReloadError()
+	snap.IncFetch()
+	snap.IncFetchError()
+	snap.SetFetchSuccess(secondTime)
+	snap.SetSource("remnawave")
 
 	samples := gatherSamples(t, snap)
 	emitted := make(map[string]struct{})
@@ -49,7 +53,7 @@ func TestAllNamesCoverEverything(t *testing.T) {
 		}
 	}
 
-	if got, want := len(AllNames()), 19; got != want {
+	if got, want := len(AllNames()), 23; got != want {
 		t.Errorf("AllNames has %d names, want the %d in the spec", got, want)
 	}
 	prometheusName := regexp.MustCompile(`^xray_[a-z0-9_]+$`)

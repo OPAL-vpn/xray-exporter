@@ -45,6 +45,13 @@ func (c *snapshotCollector) Collect(ch chan<- prometheus.Metric) {
 		collectConfig(ch, name, s.configs[name])
 	}
 
+	if s.hasFetch {
+		ch <- prometheus.MustNewConstMetric(fetchTimestamp.desc, prometheus.GaugeValue, unixSeconds(s.fetchAt))
+	}
+	if s.source != "" {
+		ch <- prometheus.MustNewConstMetric(sourceInfo.desc, prometheus.GaugeValue, 1, s.source)
+	}
+
 	if s.buildVersion != "" || s.buildGoVersion != "" {
 		ch <- prometheus.MustNewConstMetric(buildInfo.desc, prometheus.GaugeValue, 1, s.buildVersion, s.buildGoVersion)
 	}

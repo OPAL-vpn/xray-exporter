@@ -92,6 +92,15 @@ var (
 		"Configuration reloads applied.")
 	reloadErrors = newCounterDef("exporter_config_reload_errors_total",
 		"Configuration reloads that failed.")
+	fetchTotal = newCounterDef("exporter_config_fetch_total",
+		"Config source fetch attempts.")
+	fetchErrors = newCounterDef("exporter_config_fetch_errors_total",
+		"Config source fetches that returned no usable set.")
+	fetchTimestamp = newMetricDef("exporter_config_fetch_timestamp_seconds",
+		"When the last config source fetch succeeded.")
+	sourceInfo = newMetricDef("exporter_config_source_info",
+		"The configured config source type.",
+		"type")
 	buildInfo = newMetricDef("build_info",
 		"Build version and Go version of the exporter.",
 		"version", "go_version")
@@ -105,6 +114,7 @@ var allMetrics = []*metricDef{
 	configRunning, configInfo,
 	cycleTimestamp, cycleDuration, cycleTargets,
 	reloadTotal, reloadErrors,
+	fetchTotal, fetchErrors, fetchTimestamp, sourceInfo,
 	buildInfo,
 }
 

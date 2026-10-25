@@ -23,7 +23,14 @@ type Snapshot struct {
 
 	reloads      prometheus.Counter
 	reloadErrors prometheus.Counter
-	collector    prometheus.Collector
+
+	fetches     prometheus.Counter
+	fetchErrors prometheus.Counter
+	fetchAt     time.Time
+	hasFetch    bool
+	source      string
+
+	collector prometheus.Collector
 }
 
 // New returns an empty snapshot.
@@ -32,8 +39,10 @@ func New() *Snapshot {
 		configs:      make(map[string]*configState),
 		reloads:      reloadTotal.newCounter(),
 		reloadErrors: reloadErrors.newCounter(),
+		fetches:      fetchTotal.newCounter(),
+		fetchErrors:  fetchErrors.newCounter(),
 	}
-	s.collector = combinedCollector{&snapshotCollector{snapshot: s}, s.reloads, s.reloadErrors}
+	s.collector = combinedCollector{&snapshotCollector{snapshot: s}, s.reloads, s.reloadErrors, s.fetches, s.fetchErrors}
 	return s
 }
 
@@ -221,6 +230,31 @@ func (s *Snapshot) IncReload() {
 
 func (s *Snapshot) IncReloadError() {
 	s.reloadErrors.Inc()
+}
+
+func (s *Snapshot) IncFetch() {
+	s.fetches.Inc()
+}
+
+func (s *Snapshot) IncFetchError() {
+	s.fetchErrors.Inc()
+}
+
+// SetFetchSuccess records when the config source last returned a usable set; a
+// failed fetch leaves the previous success time in place.
+func (s *Snapshot) SetFetchSuccess(at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.fetchAt = at
+	s.hasFetch = true
+}
+
+func (s *Snapshot) SetSource(kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.source = kind
 }
 
 // Collector renders the last snapshot without waiting for a measurement.
