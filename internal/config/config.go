@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -24,13 +26,24 @@ type Resolver struct {
 	DoTHost string `yaml:"dot_host"`
 }
 
-// ExporterConfig is the parsed xray-exporter-config.yml. Nothing is defaulted: a
-// missing field is an error.
+// XrayConfigSource selects where full xray client configs come from. Interval is
+// the parsed Refresh; it stays zero for a directory source.
+type XrayConfigSource struct {
+	Type     string        `yaml:"type"`
+	Path     string        `yaml:"path,omitempty"`
+	URL      string        `yaml:"url,omitempty"`
+	Refresh  string        `yaml:"refresh,omitempty"`
+	Interval time.Duration `yaml:"-"`
+}
+
+// ExporterConfig is the parsed xray-exporter-config.yml. Nothing is defaulted
+// except the config source's refresh: a missing field is an error.
 type ExporterConfig struct {
-	DNSProbeDomain string     `yaml:"dns_probe_domain"`
-	DNSUpstream    string     `yaml:"dns_upstream"`
-	Targets        []Target   `yaml:"targets"`
-	Resolvers      []Resolver `yaml:"dns_resolvers"`
+	DNSProbeDomain   string            `yaml:"dns_probe_domain"`
+	DNSUpstream      string            `yaml:"dns_upstream"`
+	Targets          []Target          `yaml:"targets"`
+	Resolvers        []Resolver        `yaml:"dns_resolvers"`
+	XrayConfigSource *XrayConfigSource `yaml:"xray_config_source,omitempty"`
 }
 
 func Load(path string) (*ExporterConfig, error) {
@@ -94,7 +107,72 @@ func (c *ExporterConfig) validate() error {
 		}
 	}
 
+	if err := validateSource(c.XrayConfigSource); err != nil {
+		return err
+	}
+
 	return validateUpstream(c.DNSUpstream)
+}
+
+// validateSource checks the optional source block and parses its refresh. Every
+// error names the block, so the message points at the YAML key.
+func validateSource(src *XrayConfigSource) error {
+	if src == nil {
+		return nil
+	}
+	if err := src.validate(); err != nil {
+		return fmt.Errorf("xray_config_source: %w", err)
+	}
+	return nil
+}
+
+func (s *XrayConfigSource) validate() error {
+	switch s.Type {
+	case "directory":
+		if s.URL != "" {
+			return errors.New("path and url are mutually exclusive")
+		}
+		if s.Refresh != "" {
+			return errors.New("refresh is only valid for a remnawave source")
+		}
+		s.Interval = 0
+		return nil
+	case "remnawave":
+		if s.Path != "" {
+			return errors.New("path and url are mutually exclusive")
+		}
+		if err := validateSourceURL(s.URL); err != nil {
+			return err
+		}
+		if s.Refresh == "" {
+			s.Interval = 5 * time.Minute
+			return nil
+		}
+		interval, err := time.ParseDuration(s.Refresh)
+		if err != nil {
+			return fmt.Errorf("refresh: %w", err)
+		}
+		if interval < 0 {
+			return errors.New("refresh must not be negative")
+		}
+		s.Interval = interval
+		return nil
+	default:
+		return errors.New("type must be directory or remnawave")
+	}
+}
+
+// validateSourceURL names the url field without echoing the value: the URL
+// embeds the subscription shortUuid and must not reach logs.
+func validateSourceURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return errors.New("url is required")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return errors.New("url must be an absolute http or https URL with a host")
+	}
+	return nil
 }
 
 // normalizeHost validates a target host and returns it trimmed. This is the

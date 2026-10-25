@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 )
@@ -288,6 +289,224 @@ targets:
 			err := loadError(t, path)
 			if !strings.Contains(err, "target 0:") || !strings.Contains(err, tc.want) {
 				t.Errorf("error %q does not reject %q with %q", err, tc.host, tc.want)
+			}
+		})
+	}
+}
+
+// sourceYAML expands an unindented block body into an xray_config_source block.
+func sourceYAML(body string) string {
+	var b strings.Builder
+	b.WriteString("xray_config_source:\n")
+	for _, line := range strings.Split(strings.TrimSpace(body), "\n") {
+		b.WriteString("  " + line + "\n")
+	}
+	return b.String()
+}
+
+func TestLoadSourceRemnawave(t *testing.T) {
+	path := writeConfigFile(t, validBody+sourceYAML(`type: remnawave
+url: https://panel.test/api/sub/short`))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	src := cfg.XrayConfigSource
+	if src == nil {
+		t.Fatal("XrayConfigSource = nil, want the remnawave block")
+	}
+	if src.Type != "remnawave" {
+		t.Errorf("Type = %q, want remnawave", src.Type)
+	}
+	if src.URL != "https://panel.test/api/sub/short" {
+		t.Errorf("URL = %q", src.URL)
+	}
+	if src.Path != "" {
+		t.Errorf("Path = %q, want empty", src.Path)
+	}
+	if src.Refresh != "" {
+		t.Errorf("Refresh = %q, want empty", src.Refresh)
+	}
+	if src.Interval != 5*time.Minute {
+		t.Errorf("Interval = %v, want 5m", src.Interval)
+	}
+}
+
+// TestLoadSourceRemnawaveRefresh pins the parsed refresh, including the
+// unquoted zero that must decode as the string "0".
+func TestLoadSourceRemnawaveRefresh(t *testing.T) {
+	cases := []struct {
+		name    string
+		refresh string
+		want    time.Duration
+	}{
+		{name: "explicit", refresh: "90s", want: 90 * time.Second},
+		{name: "zero", refresh: "0", want: 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+sourceYAML(`type: remnawave
+url: https://panel.test/api/sub/short
+refresh: `+tc.refresh))
+
+			cfg, err := config.Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			src := cfg.XrayConfigSource
+			if src == nil {
+				t.Fatal("XrayConfigSource = nil, want the remnawave block")
+			}
+			if src.Refresh != tc.refresh {
+				t.Errorf("Refresh = %q, want %q", src.Refresh, tc.refresh)
+			}
+			if src.Interval != tc.want {
+				t.Errorf("Interval = %v, want %v", src.Interval, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadSourceDirectory(t *testing.T) {
+	path := writeConfigFile(t, validBody+sourceYAML(`type: directory
+path: /config/x`))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	src := cfg.XrayConfigSource
+	if src == nil {
+		t.Fatal("XrayConfigSource = nil, want the directory block")
+	}
+	if src.Type != "directory" {
+		t.Errorf("Type = %q, want directory", src.Type)
+	}
+	if src.Path != "/config/x" {
+		t.Errorf("Path = %q", src.Path)
+	}
+	if src.Interval != 0 {
+		t.Errorf("Interval = %v, want 0", src.Interval)
+	}
+}
+
+func TestSourceAbsentIsNil(t *testing.T) {
+	cfg, err := config.Load(writeConfigFile(t, validBody))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.XrayConfigSource != nil {
+		t.Errorf("XrayConfigSource = %+v, want nil", cfg.XrayConfigSource)
+	}
+}
+
+func TestRejectSource(t *testing.T) {
+	cases := []struct {
+		name string
+		// source is an unindented xray_config_source body.
+		source string
+		want   string
+		// decoder marks errors that come from KnownFields, not validateSource.
+		decoder bool
+	}{
+		{
+			name:   "missing type",
+			source: "url: https://panel.test/api/sub/short",
+			want:   "xray_config_source: type must be directory or remnawave",
+		},
+		{
+			name:   "other type",
+			source: "type: other",
+			want:   "xray_config_source: type must be directory or remnawave",
+		},
+		{
+			name:   "missing url",
+			source: "type: remnawave",
+			want:   "xray_config_source: url is required",
+		},
+		{
+			name:   "relative url",
+			source: "type: remnawave\nurl: not-a-url",
+			want:   "xray_config_source: url must be an absolute http or https URL with a host",
+		},
+		{
+			name:   "ftp url",
+			source: "type: remnawave\nurl: ftp://panel.test/api/sub/short",
+			want:   "xray_config_source: url must be an absolute http or https URL with a host",
+		},
+		{
+			name:   "url and path",
+			source: "type: remnawave\nurl: https://panel.test/api/sub/short\npath: /config/x",
+			want:   "xray_config_source: path and url are mutually exclusive",
+		},
+		{
+			name:   "refresh on directory",
+			source: "type: directory\nrefresh: 5m",
+			want:   "xray_config_source: refresh is only valid for a remnawave source",
+		},
+		{
+			name:   "negative refresh",
+			source: "type: remnawave\nurl: https://panel.test/api/sub/short\nrefresh: -1s",
+			want:   "xray_config_source: refresh must not be negative",
+		},
+		{
+			name:   "unparseable refresh",
+			source: "type: remnawave\nurl: https://panel.test/api/sub/short\nrefresh: 5 minutes",
+			want:   "xray_config_source: refresh:",
+		},
+		{
+			name:    "unknown field",
+			source:  "type: remnawave\nurl: https://panel.test/api/sub/short\nrefresh_s: 5m",
+			want:    "field refresh_s not found",
+			decoder: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+sourceYAML(tc.source))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, filepath.Base(path)) {
+				t.Errorf("error %q does not name the file %q", err, filepath.Base(path))
+			}
+			if !strings.Contains(err, tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+			if !tc.decoder && !strings.Contains(err, filepath.Base(path)+": xray_config_source: ") {
+				t.Errorf("error %q is not prefixed with %q", err, filepath.Base(path)+": xray_config_source: ")
+			}
+		})
+	}
+}
+
+// TestSourceURLErrorDoesNotEchoSecret keeps the shortUuid out of logs: every
+// url error names the field, never the value, and url.Parse errors are not
+// wrapped because their text includes the URL.
+func TestSourceURLErrorDoesNotEchoSecret(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+	}{
+		{name: "rejected scheme", url: "ftp://short-secret.panel.test/api/sub/short-secret"},
+		{name: "unparseable", url: "https://panel.test/api/sub/short-secret%zz"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+sourceYAML("type: remnawave\nurl: "+tc.url))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "xray_config_source: url must be an absolute http or https URL with a host") {
+				t.Errorf("error %q does not name the url field", err)
+			}
+			if strings.Contains(err, "short-secret") {
+				t.Errorf("error %q echoes the subscription URL", err)
 			}
 		})
 	}

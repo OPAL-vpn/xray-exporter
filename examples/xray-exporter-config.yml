@@ -12,3 +12,9 @@ dns_resolvers:
     dot_host: one.one.one.one
   - name: quad9
     doh_url: https://dns.quad9.net/dns-query
+
+# Omit this block to read full xray client configs from XRAY_CONFIG_DIR.
+# xray_config_source:
+#   type: remnawave
+#   url: https://panel.example.com/api/sub/<shortUuid>
+#   refresh: 5m
