@@ -23,24 +23,24 @@ label), once per `INTERVAL` (default 5 min):
 ```sh
 cd deploy
 mkdir -p xray
-cp ../examples/targets.yaml targets.yaml      # then edit: no targets are built in
+cp ../examples/xray-exporter-config.yml .     # then edit: no targets are built in
 cp /path/to/*.json xray/                      # one full xray client config per file
 docker compose up -d
 curl -s localhost:9787/metrics | grep '^xray_'
 ```
 
-A fresh deployment measures nothing until `targets.yaml` exists and at least one
-config JSON is in `xray/`.
+A fresh deployment measures nothing until `xray-exporter-config.yml` exists and
+at least one config JSON is in `xray/`.
 
 `docker compose` pulls the released image. Without compose, run the same image
-from the directory holding `xray/` and `targets.yaml`:
+from the directory holding `xray/` and `xray-exporter-config.yml`:
 
 ```sh
 docker pull ghcr.io/opal-vpn/xray-exporter:v0.1.0
 docker run --rm \
   -p 9787:9787 \
   -v "$PWD/xray:/config/xray:ro" \
-  -v "$PWD/targets.yaml:/config/targets.yaml:ro" \
+  -v "$PWD/xray-exporter-config.yml:/config/xray-exporter-config.yml:ro" \
   ghcr.io/opal-vpn/xray-exporter:v0.1.0
 ```
 
@@ -58,7 +58,7 @@ docker run --rm xray-exporter:dev --version
 docker run --rm \
   -p 9787:9787 \
   -v "$PWD/deploy/xray:/config/xray:ro" \
-  -v "$PWD/deploy/targets.yaml:/config/targets.yaml:ro" \
+  -v "$PWD/deploy/xray-exporter-config.yml:/config/xray-exporter-config.yml:ro" \
   xray-exporter:dev
 ```
 
@@ -75,7 +75,7 @@ sets.
 |---|---|---|
 | `LISTEN_ADDR` | `:9787` | metrics listener |
 | `XRAY_CONFIG_DIR` | `/config/xray` | config directory, one JSON per config |
-| `TARGETS_FILE` | `/config/targets.yaml` | targets and resolvers |
+| `EXPORTER_CONFIG_FILE` | `/config/xray-exporter-config.yml` | targets and resolvers |
 | `INTERVAL` | `5m` | cycle period |
 | `WORKERS` | `8` | concurrent probes per config |
 | `PROBE_TIMEOUT` | `10s` | per HTTP/DNS probe |

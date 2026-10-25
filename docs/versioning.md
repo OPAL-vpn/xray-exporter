@@ -17,7 +17,7 @@ The "API" of a long-running exporter is what operators and dashboards depend on:
 - the `/healthz` contract: `200` with `ok` while the process serves
 - environment variables and their defaults, as listed in the README's
   configuration table
-- the `targets.yaml` schema: `dns_probe_domain`, `dns_upstream`,
+- the `xray-exporter-config.yml` schema: `dns_probe_domain`, `dns_upstream`,
   `targets[].host`, `dns_resolvers[].name` with `doh_url` or `dot_host`
 - CLI flags (`--once`, `--out`, `--deadline`, `--version`) and the shape of the
   `--once` report

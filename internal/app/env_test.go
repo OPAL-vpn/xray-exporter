@@ -20,7 +20,7 @@ func TestLoadEnvDefaults(t *testing.T) {
 	want := Env{
 		ListenAddr:       ":9787",
 		ConfigDir:        "/config/xray",
-		TargetsFile:      "/config/targets.yaml",
+		ConfigFile:       "/config/xray-exporter-config.yml",
 		Interval:         5 * time.Minute,
 		Workers:          8,
 		ProbeTimeout:     10 * time.Second,
@@ -39,19 +39,19 @@ func TestLoadEnvDefaults(t *testing.T) {
 
 func TestLoadEnvOverrides(t *testing.T) {
 	env, err := LoadEnv(getenvFunc(map[string]string{
-		"LISTEN_ADDR":         "127.0.0.1:9100",
-		"XRAY_CONFIG_DIR":     "/etc/xray",
-		"TARGETS_FILE":        "/etc/targets.yaml",
-		"INTERVAL":            "90s",
-		"WORKERS":             "3",
-		"PROBE_TIMEOUT":       "3s",
-		"RESOLVER_TIMEOUT":    "2s",
-		"XRAY_LOG_LEVEL":      "debug",
-		"XRAY_LOG_FILE":       "/var/log/xray.log",
-		"XRAY_LOG_MAX_BYTES":  "2097152",
-		"XRAY_LOG_KEEP_BYTES": "1048576",
-		"XRAY_LOCATION_ASSET": "/assets",
-		"LOG_LEVEL":           "warn",
+		"LISTEN_ADDR":          "127.0.0.1:9100",
+		"XRAY_CONFIG_DIR":      "/etc/xray",
+		"EXPORTER_CONFIG_FILE": "/etc/xray-exporter-config.yml",
+		"INTERVAL":             "90s",
+		"WORKERS":              "3",
+		"PROBE_TIMEOUT":        "3s",
+		"RESOLVER_TIMEOUT":     "2s",
+		"XRAY_LOG_LEVEL":       "debug",
+		"XRAY_LOG_FILE":        "/var/log/xray.log",
+		"XRAY_LOG_MAX_BYTES":   "2097152",
+		"XRAY_LOG_KEEP_BYTES":  "1048576",
+		"XRAY_LOCATION_ASSET":  "/assets",
+		"LOG_LEVEL":            "warn",
 	}))
 	if err != nil {
 		t.Fatalf("LoadEnv: %v", err)
@@ -60,7 +60,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	want := Env{
 		ListenAddr:       "127.0.0.1:9100",
 		ConfigDir:        "/etc/xray",
-		TargetsFile:      "/etc/targets.yaml",
+		ConfigFile:       "/etc/xray-exporter-config.yml",
 		Interval:         90 * time.Second,
 		Workers:          3,
 		ProbeTimeout:     3 * time.Second,

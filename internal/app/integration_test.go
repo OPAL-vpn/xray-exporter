@@ -115,7 +115,7 @@ func TestFreedomInstanceServesACycle(t *testing.T) {
 		},
 		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		snap:    metrics.New(),
-		targets: &config.Targets{Targets: []config.Target{{Host: host}}},
+		targets: &config.ExporterConfig{Targets: []config.Target{{Host: host}}},
 		manager: manager,
 		configs: []xraycfg.Config{cfg},
 	}

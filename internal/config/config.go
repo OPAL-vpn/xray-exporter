@@ -24,52 +24,52 @@ type Resolver struct {
 	DoTHost string `yaml:"dot_host"`
 }
 
-// Targets is the parsed targets.yaml. Nothing is defaulted: a missing field is
-// an error.
-type Targets struct {
+// ExporterConfig is the parsed xray-exporter-config.yml. Nothing is defaulted: a
+// missing field is an error.
+type ExporterConfig struct {
 	DNSProbeDomain string     `yaml:"dns_probe_domain"`
 	DNSUpstream    string     `yaml:"dns_upstream"`
 	Targets        []Target   `yaml:"targets"`
 	Resolvers      []Resolver `yaml:"dns_resolvers"`
 }
 
-func Load(path string) (*Targets, error) {
+func Load(path string) (*ExporterConfig, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fileError(path, err)
 	}
 	defer f.Close()
 
-	var targets Targets
+	var cfg ExporterConfig
 	dec := yaml.NewDecoder(f)
 	dec.KnownFields(true)
-	if err := dec.Decode(&targets); err != nil {
+	if err := dec.Decode(&cfg); err != nil {
 		return nil, fileError(path, err)
 	}
-	if err := targets.validate(); err != nil {
+	if err := cfg.validate(); err != nil {
 		return nil, fileError(path, err)
 	}
-	return &targets, nil
+	return &cfg, nil
 }
 
 func fileError(path string, err error) error {
 	return fmt.Errorf("%s: %w", filepath.Base(path), err)
 }
 
-func (t *Targets) validate() error {
-	if strings.TrimSpace(t.DNSProbeDomain) == "" {
+func (c *ExporterConfig) validate() error {
+	if strings.TrimSpace(c.DNSProbeDomain) == "" {
 		return errors.New("dns_probe_domain is required")
 	}
-	if strings.TrimSpace(t.DNSUpstream) == "" {
+	if strings.TrimSpace(c.DNSUpstream) == "" {
 		return errors.New("dns_upstream is required")
 	}
 
-	if len(t.Targets) == 0 {
+	if len(c.Targets) == 0 {
 		return errors.New("at least one target is required")
 	}
-	seenHosts := make(map[string]struct{}, len(t.Targets))
-	for i := range t.Targets {
-		host, err := normalizeHost(t.Targets[i].Host)
+	seenHosts := make(map[string]struct{}, len(c.Targets))
+	for i := range c.Targets {
+		host, err := normalizeHost(c.Targets[i].Host)
 		if err != nil {
 			return fmt.Errorf("target %d: %w", i, err)
 		}
@@ -77,11 +77,11 @@ func (t *Targets) validate() error {
 			return fmt.Errorf("duplicate target %q", host)
 		}
 		seenHosts[host] = struct{}{}
-		t.Targets[i].Host = host
+		c.Targets[i].Host = host
 	}
 
-	seenNames := make(map[string]struct{}, len(t.Resolvers))
-	for i, resolver := range t.Resolvers {
+	seenNames := make(map[string]struct{}, len(c.Resolvers))
+	for i, resolver := range c.Resolvers {
 		if strings.TrimSpace(resolver.Name) == "" {
 			return fmt.Errorf("resolver %d: name is required", i)
 		}
@@ -94,7 +94,7 @@ func (t *Targets) validate() error {
 		}
 	}
 
-	return validateUpstream(t.DNSUpstream)
+	return validateUpstream(c.DNSUpstream)
 }
 
 // normalizeHost validates a target host and returns it trimmed. This is the

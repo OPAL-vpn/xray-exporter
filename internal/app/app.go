@@ -68,7 +68,7 @@ type application struct {
 	snap *metrics.Snapshot
 
 	mu       sync.RWMutex
-	targets  *config.Targets
+	targets  *config.ExporterConfig
 	manager  *xrayproc.Manager
 	upstream xraycfg.Upstream
 
@@ -83,7 +83,7 @@ type application struct {
 
 // newApplication loads the inputs and starts every instance.
 func newApplication(env Env, opts Options, logger *slog.Logger) (*application, error) {
-	targets, upstream, err := loadTargets(env.TargetsFile)
+	targets, upstream, err := loadExporterConfig(env.ConfigFile)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 	return a, nil
 }
 
-func loadTargets(path string) (*config.Targets, xraycfg.Upstream, error) {
+func loadExporterConfig(path string) (*config.ExporterConfig, xraycfg.Upstream, error) {
 	targets, err := config.Load(path)
 	if err != nil {
 		return nil, xraycfg.Upstream{}, err

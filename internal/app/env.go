@@ -12,7 +12,7 @@ import (
 type Env struct {
 	ListenAddr       string
 	ConfigDir        string
-	TargetsFile      string
+	ConfigFile       string
 	Interval         time.Duration
 	Workers          int
 	ProbeTimeout     time.Duration
@@ -30,7 +30,7 @@ func LoadEnv(getenv func(string) string) (Env, error) {
 	env := Env{
 		ListenAddr:   text(getenv, "LISTEN_ADDR", ":9787"),
 		ConfigDir:    text(getenv, "XRAY_CONFIG_DIR", "/config/xray"),
-		TargetsFile:  text(getenv, "TARGETS_FILE", "/config/targets.yaml"),
+		ConfigFile:   text(getenv, "EXPORTER_CONFIG_FILE", "/config/xray-exporter-config.yml"),
 		XrayLogLevel: text(getenv, "XRAY_LOG_LEVEL", "warning"),
 		XrayLogFile:  getenv("XRAY_LOG_FILE"),
 		XrayAssetDir: text(getenv, "XRAY_LOCATION_ASSET", "/usr/local/share/xray"),

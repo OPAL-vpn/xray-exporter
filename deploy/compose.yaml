@@ -1,12 +1,14 @@
-# Copy ../examples/targets.yaml to ./targets.yaml and put your xray client
-# configs in ./xray/ (one JSON file per config; the filename stem is the
-# `config` label) before starting.
+# Copy ../examples/xray-exporter-config.yml to ./xray-exporter-config.yml and
+# put your xray client configs in ./xray/ (one JSON file per config; the
+# filename stem is the `config` label) before starting.
 services:
   xray-exporter:
     image: ghcr.io/opal-vpn/xray-exporter:latest
     restart: unless-stopped
     ports:
       - "9787:9787"
+    environment:
+      EXPORTER_CONFIG_FILE: /config/xray-exporter-config.yml
     volumes:
       - ./xray:/config/xray:ro
-      - ./targets.yaml:/config/targets.yaml:ro
+      - ./xray-exporter-config.yml:/config/xray-exporter-config.yml:ro

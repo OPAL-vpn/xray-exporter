@@ -10,11 +10,11 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 )
 
-func writeTargetsFile(t *testing.T, body string) string {
+func writeConfigFile(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "targets.yaml")
+	path := filepath.Join(t.TempDir(), "xray-exporter-config.yml")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatalf("write targets file: %v", err)
+		t.Fatalf("write config file: %v", err)
 	}
 	return path
 }
@@ -34,7 +34,7 @@ dns_resolvers:
 `
 
 func TestLoadValidTargets(t *testing.T) {
-	path := writeTargetsFile(t, validBody)
+	path := writeConfigFile(t, validBody)
 
 	targets, err := config.Load(path)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestLoadValidTargets(t *testing.T) {
 }
 
 func TestLoadRejectsUnknownField(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -108,7 +108,7 @@ dns_resolvers:
 }
 
 func TestLoadRejectsEgressCheckURL(t *testing.T) {
-	path := writeTargetsFile(t, `egress_check_url: https://api.ipify.org?format=text
+	path := writeConfigFile(t, `egress_check_url: https://api.ipify.org?format=text
 dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
@@ -122,7 +122,7 @@ targets:
 }
 
 func TestLoadRequiresTargets(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets: []
 `)
@@ -134,7 +134,7 @@ targets: []
 }
 
 func TestLoadRejectsDuplicateTarget(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -148,7 +148,7 @@ targets:
 }
 
 func TestLoadRequiresResolverTransport(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -163,7 +163,7 @@ dns_resolvers:
 }
 
 func TestLoadRejectsDuplicateResolver(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -181,7 +181,7 @@ dns_resolvers:
 }
 
 func TestLoadRejectsDNSUpstreamWithoutPort(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1
 targets:
   - host: youtube.com
@@ -194,7 +194,7 @@ targets:
 }
 
 func TestLoadMissingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "targets.yaml")
+	path := filepath.Join(t.TempDir(), "xray-exporter-config.yml")
 
 	_, err := config.Load(path)
 	if err == nil {
@@ -216,7 +216,7 @@ func loadError(t *testing.T, path string) string {
 
 // TestLoadRejectsSchemeInHost covers the form that used to break the DNS probe.
 func TestLoadRejectsSchemeInHost(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -224,14 +224,14 @@ targets:
 `)
 
 	err := loadError(t, path)
-	if !strings.Contains(err, "targets.yaml: target 1: host must not include a scheme") {
+	if !strings.Contains(err, "xray-exporter-config.yml: target 1: host must not include a scheme") {
 		t.Errorf("error %q does not reject the scheme with a field-named error", err)
 	}
 }
 
 // TestLoadNormalizesHosts pins the accepted forms and trimming.
 func TestLoadNormalizesHosts(t *testing.T) {
-	path := writeTargetsFile(t, `dns_probe_domain: example.com
+	path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: youtube.com
@@ -279,7 +279,7 @@ func TestLoadRejectsUnparseableHosts(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			path := writeTargetsFile(t, `dns_probe_domain: example.com
+			path := writeConfigFile(t, `dns_probe_domain: example.com
 dns_upstream: 1.1.1.1:53
 targets:
   - host: "`+tc.host+`"

@@ -73,7 +73,7 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
-	targetsPath := filepath.Join(t.TempDir(), "targets.yaml")
+	targetsPath := filepath.Join(t.TempDir(), "xray-exporter-config.yml")
 	targetsBody := "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n"
 	if err := os.WriteFile(targetsPath, []byte(targetsBody), 0o644); err != nil {
 		t.Fatalf("write targets: %v", err)
@@ -83,14 +83,14 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 	a := &application{
 		env: Env{
 			ConfigDir:    t.TempDir(), // readable, and the last config was deleted
-			TargetsFile:  targetsPath,
+			ConfigFile:   targetsPath,
 			Interval:     time.Hour,
 			Workers:      1,
 			ProbeTimeout: time.Second,
 		},
 		logger:   logger,
 		snap:     metrics.New(),
-		targets:  &config.Targets{DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
+		targets:  &config.ExporterConfig{DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
 		upstream: xraycfg.Upstream{Host: "9.9.9.9", Port: 53},
 		manager:  testManager(logger),
 		configs:  []xraycfg.Config{{Name: "nl1"}},
@@ -133,7 +133,7 @@ func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 		},
 		logger:  logger,
 		snap:    metrics.New(),
-		targets: &config.Targets{},
+		targets: &config.ExporterConfig{},
 		manager: testManager(logger),
 	}
 

@@ -18,9 +18,9 @@ func (a *application) reload(ctx context.Context) {
 	applied := true
 	restartedAll := false
 
-	if targets, upstream, err := loadTargets(a.env.TargetsFile); err != nil {
+	if targets, upstream, err := loadExporterConfig(a.env.ConfigFile); err != nil {
 		applied = false
-		a.logger.Error("reload: targets file rejected, keeping previous", "error", err)
+		a.logger.Error("reload: exporter config rejected, keeping previous", "error", err)
 	} else {
 		a.mu.Lock()
 		restartedAll = upstream != a.upstream
