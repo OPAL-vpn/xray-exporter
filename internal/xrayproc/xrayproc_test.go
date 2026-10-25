@@ -2,6 +2,7 @@ package xrayproc_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -253,8 +254,9 @@ func TestStartErrorIsReturned(t *testing.T) {
 	}
 }
 
-// TestStartFailureIsAttributed pins that a failed start names its config.
-func TestStartFailureIsAttributed(t *testing.T) {
+// TestStartDoesNotLogFailure pins that a failed start is the caller's to log:
+// Start returns the StartError and stays silent.
+func TestStartDoesNotLogFailure(t *testing.T) {
 	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
@@ -264,11 +266,15 @@ func TestStartFailureIsAttributed(t *testing.T) {
 		t.Fatal("Start: want error, got nil")
 	}
 
-	out := buf.String()
-	for _, want := range []string{"config=bad", "subsystem=xray", "nope"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("log %q does not contain %q", out, want)
-		}
+	var startErr *xrayproc.StartError
+	if !errors.As(err, &startErr) {
+		t.Fatalf("error = %T, want *xrayproc.StartError", err)
+	}
+	if got, want := startErr.Config, "bad"; got != want {
+		t.Errorf("StartError.Config = %q, want %q", got, want)
+	}
+	if out := buf.String(); out != "" {
+		t.Errorf("Start logged %q, want the failure left to the caller", out)
 	}
 }
 

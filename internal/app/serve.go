@@ -39,6 +39,7 @@ func (a *application) serve(ctx context.Context) error {
 
 	// Measure at startup so the first scrape does not wait an interval.
 	a.startCycle(runCtx, a.env.Interval/2)
+	go a.refreshLoop(runCtx)
 
 	for {
 		select {

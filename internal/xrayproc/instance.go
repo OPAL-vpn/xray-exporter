@@ -32,8 +32,8 @@ func (i *Instance) Close() error {
 	return i.closeErr
 }
 
-// StartError is one config's failed start. Start already logged it, so callers
-// must not log it again.
+// StartError is one config's failed start. Start does not log it; the caller
+// owns that, so one failure is one line with the source's level.
 type StartError struct {
 	Config string
 	Err    error
@@ -44,12 +44,11 @@ func (e *StartError) Error() string { return e.Config + ": " + e.Err.Error() }
 func (e *StartError) Unwrap() error { return e.Err }
 
 // Start starts cfg with injected socks and tunnel-DNS inbounds and returns once
-// the socks inbound accepts.
+// the socks inbound accepts. A failed start returns *StartError for the caller
+// to log.
 func Start(cfg xraycfg.Config, up xraycfg.Upstream, logLevel string, logger *slog.Logger) (*Instance, error) {
 	inst, err := start(cfg, up, logLevel, logger)
 	if err != nil {
-		// Match the bridged stream's subsystem so one filter shows the whole story.
-		logger.Error("xray instance failed to start", "subsystem", "xray", "config", cfg.Name, "error", err)
 		return nil, &StartError{Config: cfg.Name, Err: err}
 	}
 	return inst, nil

@@ -96,6 +96,17 @@ func (a *application) startCycle(ctx context.Context, deadline time.Duration) bo
 	return true
 }
 
+// startCycleIfIdle starts a pass only when none holds the cycle lock, so a
+// refresh that repairs a missing instance reports no skip and interrupts no
+// measurement.
+func (a *application) startCycleIfIdle(ctx context.Context, deadline time.Duration) {
+	if !a.cycleMu.TryLock() {
+		return
+	}
+	a.cycleMu.Unlock()
+	a.startCycle(ctx, deadline)
+}
+
 // interruptCycle cancels and waits for the running cycle, so a reload cannot
 // publish results from the config it is replacing.
 func (a *application) interruptCycle() {

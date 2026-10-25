@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -8,13 +9,15 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
-// apply reconciles the manager against cfgs and logs what changed.
+// apply reconciles the manager against cfgs and logs what changed. A config
+// that fails to start is a published result, logged at the source's level.
 func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, ok bool) {
 	started, stopped, errs := a.manager.Apply(cfgs)
 	for _, err := range errs {
-		// StartError already logged the failure; log only manager-level errors.
 		var startErr *xrayproc.StartError
 		if errors.As(err, &startErr) {
+			a.logger.Log(context.Background(), a.policy.startLogLevel, "xray instance failed to start",
+				"subsystem", "xray", "config", startErr.Config, "error", startErr.Err)
 			continue
 		}
 		a.logger.Error("xray config failed", "error", err)

@@ -79,6 +79,12 @@ type application struct {
 	configs []xraycfg.Config
 	seeded  map[string]struct{}
 
+	// refreshMu serializes refreshes, which interrupt and restart the cycle.
+	refreshMu sync.Mutex
+	// refreshWake interrupts a parked refresh loop; buffered 1 so a wake-up is
+	// never lost.
+	refreshWake chan struct{}
+
 	cycleMu  sync.Mutex
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
@@ -107,17 +113,18 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 	}
 
 	a := &application{
-		env:        env,
-		opts:       opts,
-		logger:     logger,
-		xrayLogger: xrayLogger,
-		logFile:    logFile,
-		snap:       metrics.New(),
-		targets:    targets,
-		upstream:   upstream,
-		source:     source,
-		policy:     policy,
-		seeded:     make(map[string]struct{}),
+		env:         env,
+		opts:        opts,
+		logger:      logger,
+		xrayLogger:  xrayLogger,
+		logFile:     logFile,
+		snap:        metrics.New(),
+		targets:     targets,
+		upstream:    upstream,
+		source:      source,
+		policy:      policy,
+		seeded:      make(map[string]struct{}),
+		refreshWake: make(chan struct{}, 1),
 	}
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
