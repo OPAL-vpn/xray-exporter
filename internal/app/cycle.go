@@ -133,7 +133,7 @@ func (a *application) jobs() []sampler.Job {
 func (a *application) inputs() ([]config.Target, []config.Resolver, string) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.targets.Targets, a.targets.Resolvers, a.targets.DNSProbeDomain
+	return a.exporterConfig.Targets, a.exporterConfig.Resolvers, a.exporterConfig.DNSProbeDomain
 }
 
 func hasJob(jobs []sampler.Job, name string) bool {

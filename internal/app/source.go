@@ -38,11 +38,19 @@ func newSource(cfg *config.ExporterConfig, configDir string) (xraycfg.Source, so
 	if err != nil {
 		return nil, sourcePolicy{}, err
 	}
-	return src, sourcePolicy{failClosed: true, strictStartup: false, startLogLevel: slog.LevelWarn}, nil
+	return src, remnawavePolicy(), nil
 }
 
+// directoryPolicy is hand-written configs: a broken deployment at startup, and a
+// failed start is an operator error worth the ERROR level.
 func directoryPolicy() sourcePolicy {
-	return sourcePolicy{failClosed: false, strictStartup: true, startLogLevel: slog.LevelError}
+	return sourcePolicy{strictStartup: true, startLogLevel: slog.LevelError}
+}
+
+// remnawavePolicy is panel-provided configs: a failed fetch or start is the
+// panel's state rather than a deployment error, so the exporter fails closed.
+func remnawavePolicy() sourcePolicy {
+	return sourcePolicy{failClosed: true, startLogLevel: slog.LevelWarn}
 }
 
 // fetchSource fetches one complete set, counting the attempt. A readable but

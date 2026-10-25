@@ -395,15 +395,15 @@ func TestReloadUsesDirectorySource(t *testing.T) {
 			Workers:      1,
 			ProbeTimeout: time.Second,
 		},
-		logger:   logger,
-		snap:     metrics.New(),
-		targets:  &config.ExporterConfig{DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
-		upstream: xraycfg.Upstream{Host: "9.9.9.9", Port: 53},
-		manager:  testManager(logger),
-		source:   xraycfg.Directory{Path: dir},
-		policy:   directoryPolicy(),
-		configs:  []xraycfg.Config{{Name: "nl1"}},
-		seeded:   map[string]struct{}{"nl1": {}},
+		logger:         logger,
+		snap:           metrics.New(),
+		exporterConfig: &config.ExporterConfig{DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
+		upstream:       xraycfg.Upstream{Host: "9.9.9.9", Port: 53},
+		manager:        testManager(logger),
+		source:         xraycfg.Directory{Path: dir},
+		policy:         directoryPolicy(),
+		configs:        []xraycfg.Config{{Name: "nl1"}},
+		seeded:         map[string]struct{}{"nl1": {}},
 	}
 	a.snap.SetBuildInfo("test", "go-test")
 	a.snap.Seed("nl1", []string{"example.com"}, nil, time.Now())
@@ -597,12 +597,12 @@ func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 			ProbeTimeout:    time.Second,
 			ResolverTimeout: time.Second,
 		},
-		logger:  logger,
-		snap:    metrics.New(),
-		source:  xraycfg.Directory{},
-		policy:  directoryPolicy(),
-		targets: &config.ExporterConfig{},
-		manager: testManager(logger),
+		logger:         logger,
+		snap:           metrics.New(),
+		source:         xraycfg.Directory{},
+		policy:         directoryPolicy(),
+		exporterConfig: &config.ExporterConfig{},
+		manager:        testManager(logger),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

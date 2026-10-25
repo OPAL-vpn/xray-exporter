@@ -116,13 +116,13 @@ func TestFreedomInstanceServesACycle(t *testing.T) {
 			ProbeTimeout:    5 * time.Second,
 			ResolverTimeout: 5 * time.Second,
 		},
-		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		snap:    metrics.New(),
-		targets: &config.ExporterConfig{Targets: []config.Target{{Host: host}}},
-		manager: manager,
-		source:  xraycfg.Directory{},
-		policy:  directoryPolicy(),
-		configs: []xraycfg.Config{cfg},
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		snap:           metrics.New(),
+		exporterConfig: &config.ExporterConfig{Targets: []config.Target{{Host: host}}},
+		manager:        manager,
+		source:         xraycfg.Directory{},
+		policy:         directoryPolicy(),
+		configs:        []xraycfg.Config{cfg},
 	}
 	a.snap.SetBuildInfo("test", "go-test")
 	a.snap.Seed("freedom", []string{host}, nil, time.Now())
@@ -205,7 +205,7 @@ func TestRemnawaveSourceFetchesAndServesACycle(t *testing.T) {
 	}
 
 	a.mu.Lock()
-	a.targets = &config.ExporterConfig{Targets: []config.Target{{Host: host}}}
+	a.exporterConfig = &config.ExporterConfig{Targets: []config.Target{{Host: host}}}
 	a.mu.Unlock()
 	a.seed(time.Now())
 

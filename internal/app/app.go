@@ -56,8 +56,8 @@ func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error 
 	return a.serve(ctx)
 }
 
-// application is the process state. mu guards targets, manager and upstream; a
-// reload interrupts the running cycle before writing them.
+// application is the process state. mu guards exporterConfig, manager and
+// upstream; a reload interrupts the running cycle before writing them.
 type application struct {
 	env        Env
 	opts       Options
@@ -73,10 +73,10 @@ type application struct {
 	// new one to decide whether the source must be rebuilt. refreshMu guards it.
 	sourceConfig *config.XrayConfigSource
 
-	mu       sync.RWMutex
-	targets  *config.ExporterConfig
-	manager  *xrayproc.Manager
-	upstream xraycfg.Upstream
+	mu             sync.RWMutex
+	exporterConfig *config.ExporterConfig
+	manager        *xrayproc.Manager
+	upstream       xraycfg.Upstream
 
 	// configs and seeded are the reconciled set and the names the snapshot
 	// declares; they are written only while holding refreshMu.
@@ -97,11 +97,11 @@ type application struct {
 // newApplication loads the inputs, fetches the config set and starts every
 // instance.
 func newApplication(env Env, opts Options, logger *slog.Logger) (*application, error) {
-	targets, upstream, err := loadExporterConfig(env.ConfigFile)
+	exporterConfig, upstream, err := loadExporterConfig(env.ConfigFile)
 	if err != nil {
 		return nil, err
 	}
-	source, policy, err := newSource(targets, env.ConfigDir)
+	source, policy, err := newSource(exporterConfig, env.ConfigDir)
 	if err != nil {
 		return nil, err
 	}
@@ -117,19 +117,19 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 	}
 
 	a := &application{
-		env:          env,
-		opts:         opts,
-		logger:       logger,
-		xrayLogger:   xrayLogger,
-		logFile:      logFile,
-		snap:         metrics.New(),
-		targets:      targets,
-		upstream:     upstream,
-		source:       source,
-		policy:       policy,
-		sourceConfig: targets.XrayConfigSource,
-		seeded:       make(map[string]struct{}),
-		refreshWake:  make(chan struct{}, 1),
+		env:            env,
+		opts:           opts,
+		logger:         logger,
+		xrayLogger:     xrayLogger,
+		logFile:        logFile,
+		snap:           metrics.New(),
+		exporterConfig: exporterConfig,
+		upstream:       upstream,
+		source:         source,
+		policy:         policy,
+		sourceConfig:   exporterConfig.XrayConfigSource,
+		seeded:         make(map[string]struct{}),
+		refreshWake:    make(chan struct{}, 1),
 	}
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
@@ -149,15 +149,15 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 }
 
 func loadExporterConfig(path string) (*config.ExporterConfig, xraycfg.Upstream, error) {
-	targets, err := config.Load(path)
+	exporterConfig, err := config.Load(path)
 	if err != nil {
 		return nil, xraycfg.Upstream{}, err
 	}
-	upstream, err := xraycfg.UpstreamFrom(targets.DNSUpstream)
+	upstream, err := xraycfg.UpstreamFrom(exporterConfig.DNSUpstream)
 	if err != nil {
 		return nil, xraycfg.Upstream{}, err
 	}
-	return targets, upstream, nil
+	return exporterConfig, upstream, nil
 }
 
 // close stops the cycle and instances, then releases the log file.
