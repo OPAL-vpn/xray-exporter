@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"errors"
 	"time"
 
-	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
 
@@ -39,17 +37,17 @@ func (a *application) reload(ctx context.Context) {
 		}
 	}
 
-	discovered, err := xraycfg.Discover(a.env.ConfigDir)
+	fetched, err := a.fetchSource(ctx)
 	switch {
-	case errors.Is(err, xraycfg.ErrNoConfigs):
-		// A readable but empty directory is authoritative: every config left.
-		a.configs = nil
-		a.logger.Info("reload: config directory empty, stopping every config")
 	case err != nil:
 		applied = false
-		a.logger.Error("reload: config directory rejected, keeping previous", "error", err)
+		a.logger.Error("reload: config source rejected, keeping previous", "error", err)
+	case len(fetched) == 0:
+		// A readable but empty set is authoritative: every config left.
+		a.configs = nil
+		a.logger.Info("reload: config source empty, stopping every config")
 	default:
-		a.configs = discovered
+		a.configs = fetched
 	}
 
 	_, stopped, accepted := a.apply(a.configs)

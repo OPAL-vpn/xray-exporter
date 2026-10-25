@@ -117,6 +117,8 @@ func TestFreedomInstanceServesACycle(t *testing.T) {
 		snap:    metrics.New(),
 		targets: &config.ExporterConfig{Targets: []config.Target{{Host: host}}},
 		manager: manager,
+		source:  xraycfg.Directory{},
+		policy:  directoryPolicy(),
 		configs: []xraycfg.Config{cfg},
 	}
 	a.snap.SetBuildInfo("test", "go-test")

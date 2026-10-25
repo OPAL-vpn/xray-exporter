@@ -67,6 +67,9 @@ type application struct {
 
 	snap *metrics.Snapshot
 
+	source xraycfg.Source
+	policy sourcePolicy
+
 	mu       sync.RWMutex
 	targets  *config.ExporterConfig
 	manager  *xrayproc.Manager
@@ -81,13 +84,14 @@ type application struct {
 	cancel   context.CancelFunc
 }
 
-// newApplication loads the inputs and starts every instance.
+// newApplication loads the inputs, fetches the config set and starts every
+// instance.
 func newApplication(env Env, opts Options, logger *slog.Logger) (*application, error) {
 	targets, upstream, err := loadExporterConfig(env.ConfigFile)
 	if err != nil {
 		return nil, err
 	}
-	cfgs, err := xraycfg.Discover(env.ConfigDir)
+	source, policy, err := newSource(targets, env.ConfigDir)
 	if err != nil {
 		return nil, err
 	}
@@ -111,12 +115,22 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 		snap:       metrics.New(),
 		targets:    targets,
 		upstream:   upstream,
-		configs:    cfgs,
-		seeded:     make(map[string]struct{}, len(cfgs)),
+		source:     source,
+		policy:     policy,
+		seeded:     make(map[string]struct{}),
 	}
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
+	a.snap.SetSource(source.Kind())
 
+	// The first fetch has no request of its own to cancel; the source bounds it.
+	cfgs, err := a.initialConfigs(context.Background())
+	if err != nil {
+		a.close()
+		return nil, err
+	}
+
+	a.configs = cfgs
 	a.apply(cfgs)
 	a.seed(time.Now())
 	return a, nil

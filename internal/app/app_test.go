@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	clog "github.com/xtls/xray-core/common/log"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
@@ -30,8 +32,299 @@ func testManager(logger *slog.Logger) *xrayproc.Manager {
 	return xrayproc.NewManager(xraycfg.Upstream{Host: "9.9.9.9", Port: 53}, "warning", logger)
 }
 
+// exporterConfigFile writes a minimal exporter config; sourceBlock is appended
+// verbatim so a test can name an xray_config_source.
+func exporterConfigFile(t *testing.T, sourceBlock string) string {
+	t.Helper()
+
+	body := "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n" + sourceBlock
+	path := filepath.Join(t.TempDir(), "xray-exporter-config.yml")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write exporter config: %v", err)
+	}
+	return path
+}
+
+// startupEnv is the smallest Env newApplication needs; XrayAssetDir is a fresh
+// directory so the process environment points somewhere harmless.
+func startupEnv(t *testing.T, configFile, configDir string) Env {
+	t.Helper()
+	return Env{
+		ConfigDir:       configDir,
+		ConfigFile:      configFile,
+		Interval:        time.Hour,
+		Workers:         1,
+		ProbeTimeout:    time.Second,
+		ResolverTimeout: time.Second,
+		XrayLogLevel:    "warning",
+		XrayAssetDir:    t.TempDir(),
+	}
+}
+
+func remnawaveSourceBlock(url string) string {
+	return "xray_config_source:\n  type: remnawave\n  url: " + url + "\n  refresh: 0\n"
+}
+
+// panel serves body on every request and returns its base URL; a non-200 status
+// exercises a failed fetch.
+func panel(t *testing.T, status int, body string) string {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if status != http.StatusOK {
+			http.Error(w, "panel detail", status)
+			return
+		}
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// snapValue renders the snapshot the way the collector does and returns one
+// series; ok is false when the series is absent.
+func snapValue(t *testing.T, snap *metrics.Snapshot, name string, labelPairs ...string) (float64, bool) {
+	t.Helper()
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(snap.Collector())
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+
+	want := make(map[string]string, len(labelPairs)/2)
+	for i := 0; i < len(labelPairs); i += 2 {
+		want[labelPairs[i]] = labelPairs[i+1]
+	}
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			got := make(map[string]string, len(metric.GetLabel()))
+			for _, pair := range metric.GetLabel() {
+				got[pair.GetName()] = pair.GetValue()
+			}
+			if !maps.Equal(got, want) {
+				continue
+			}
+			if metric.GetCounter() != nil {
+				return metric.GetCounter().GetValue(), true
+			}
+			return metric.GetGauge().GetValue(), true
+		}
+	}
+	return 0, false
+}
+
+func TestNewSourceDefaultsToDirectory(t *testing.T) {
+	src, policy, err := newSource(&config.ExporterConfig{}, "/config/xray")
+	if err != nil {
+		t.Fatalf("newSource: %v", err)
+	}
+
+	if got, want := src.Kind(), "directory"; got != want {
+		t.Errorf("Kind() = %q, want %q", got, want)
+	}
+	dir, ok := src.(xraycfg.Directory)
+	if !ok {
+		t.Fatalf("source is %T, want xraycfg.Directory", src)
+	}
+	if got, want := dir.Path, "/config/xray"; got != want {
+		t.Errorf("Path = %q, want the config dir %q", got, want)
+	}
+	if !policy.strictStartup {
+		t.Error("strictStartup = false, want an empty directory to be fatal at startup")
+	}
+	if policy.failClosed {
+		t.Error("failClosed = true, want a directory to keep its previous set")
+	}
+	if got, want := policy.startLogLevel, slog.LevelError; got != want {
+		t.Errorf("startLogLevel = %v, want %v", got, want)
+	}
+}
+
+func TestNewSourceDirectoryPath(t *testing.T) {
+	cfg := &config.ExporterConfig{XrayConfigSource: &config.XrayConfigSource{Type: "directory", Path: "/etc/xray"}}
+
+	src, policy, err := newSource(cfg, "/config/xray")
+	if err != nil {
+		t.Fatalf("newSource: %v", err)
+	}
+
+	dir, ok := src.(xraycfg.Directory)
+	if !ok {
+		t.Fatalf("source is %T, want xraycfg.Directory", src)
+	}
+	if got, want := dir.Path, "/etc/xray"; got != want {
+		t.Errorf("Path = %q, want the block path %q", got, want)
+	}
+	if !policy.strictStartup || policy.failClosed {
+		t.Errorf("policy = %+v, want the directory policy", policy)
+	}
+}
+
+func TestNewSourceRemnawave(t *testing.T) {
+	cfg := &config.ExporterConfig{XrayConfigSource: &config.XrayConfigSource{
+		Type:     "remnawave",
+		URL:      "https://panel.example.com/api/sub/abc",
+		Interval: 5 * time.Minute,
+	}}
+
+	src, policy, err := newSource(cfg, "/config/xray")
+	if err != nil {
+		t.Fatalf("newSource: %v", err)
+	}
+
+	if got, want := src.Kind(), "remnawave"; got != want {
+		t.Errorf("Kind() = %q, want %q", got, want)
+	}
+	if got, want := src.Refresh(), 5*time.Minute; got != want {
+		t.Errorf("Refresh() = %s, want %s", got, want)
+	}
+	if !policy.failClosed {
+		t.Error("failClosed = false, want a panel to fail closed")
+	}
+	if policy.strictStartup {
+		t.Error("strictStartup = true, want a failed first fetch to be soft")
+	}
+	if got, want := policy.startLogLevel, slog.LevelWarn; got != want {
+		t.Errorf("startLogLevel = %v, want %v", got, want)
+	}
+}
+
+func TestStartupFetchesRemnawaveConfigs(t *testing.T) {
+	panelURL := panel(t, http.StatusOK, `[{"remarks":"local","outbounds":[{"protocol":"freedom","settings":{}}]}]`)
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(panelURL)), t.TempDir())
+
+	a, err := newApplication(env, Options{Version: "test"}, testDiscardLogger())
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	defer a.close()
+
+	configs := a.snap.Export().Configs
+	if len(configs) != 1 {
+		t.Fatalf("configs = %+v, want the one fetched config", configs)
+	}
+	if got, want := configs[0].Name, "local"; got != want {
+		t.Errorf("config name = %q, want %q", got, want)
+	}
+	if !configs[0].Running {
+		t.Error("config running = false, want the fetched freedom config started")
+	}
+	if got := len(a.instances()); got != 1 {
+		t.Errorf("instances = %d, want 1", got)
+	}
+
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_source_info", "type", "remnawave"); !ok || got != 1 {
+		t.Errorf("xray_exporter_config_source_info{type=\"remnawave\"} = %v (present %v), want 1", got, ok)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_total"); !ok || got != 1 {
+		t.Errorf("xray_exporter_config_fetch_total = %v (present %v), want 1", got, ok)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_errors_total"); !ok || got != 0 {
+		t.Errorf("xray_exporter_config_fetch_errors_total = %v (present %v), want 0", got, ok)
+	}
+	if _, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok {
+		t.Error("xray_exporter_config_fetch_timestamp_seconds is absent after a successful fetch")
+	}
+}
+
+func TestStartupFetchFailureStartsWithoutConfigs(t *testing.T) {
+	panelURL := panel(t, http.StatusInternalServerError, "")
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(panelURL)), t.TempDir())
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	a, err := newApplication(env, Options{Version: "test"}, logger)
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	defer a.close()
+
+	if configs := a.snap.Export().Configs; len(configs) != 0 {
+		t.Errorf("configs = %+v, want none after a failed first fetch", configs)
+	}
+	if got := len(a.instances()); got != 0 {
+		t.Errorf("instances = %d, want 0", got)
+	}
+
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_source_info", "type", "remnawave"); !ok || got != 1 {
+		t.Errorf("xray_exporter_config_source_info{type=\"remnawave\"} = %v (present %v), want 1", got, ok)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_errors_total"); !ok || got != 1 {
+		t.Errorf("xray_exporter_config_fetch_errors_total = %v (present %v), want 1", got, ok)
+	}
+	if got := strings.Count(logs.String(), "level=ERROR"); got != 1 {
+		t.Errorf("ERROR lines = %d, want one for the soft fetch failure:\n%s", got, logs.String())
+	}
+}
+
+func TestOnceFailsWhenFetchFails(t *testing.T) {
+	panelURL := panel(t, http.StatusInternalServerError, "")
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(panelURL)), t.TempDir())
+	reportPath := filepath.Join(t.TempDir(), "report.txt")
+
+	err := Run(context.Background(), env, Options{Once: true, Out: reportPath, Version: "test"}, testDiscardLogger())
+	if err == nil {
+		t.Fatal("Run with --once and a failed fetch: want an error")
+	}
+	if !strings.Contains(err.Error(), "unexpected status") {
+		t.Errorf("error = %q, want the panel status", err)
+	}
+	if _, statErr := os.Stat(reportPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("report file exists after a failed startup fetch: %v", statErr)
+	}
+}
+
+func TestStartupEmptyDirectoryIsFatal(t *testing.T) {
+	dir := t.TempDir()
+	env := startupEnv(t, exporterConfigFile(t, ""), dir)
+
+	a, err := newApplication(env, Options{Version: "test"}, testDiscardLogger())
+	if err == nil {
+		a.close()
+		t.Fatal("newApplication with an empty config directory: want an error")
+	}
+	if !errors.Is(err, xraycfg.ErrNoConfigs) {
+		t.Errorf("error = %v, want it to wrap ErrNoConfigs", err)
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Errorf("error = %q, want it to name the config directory %q", err, dir)
+	}
+}
+
+func TestEmptyDirectoryFetchIsNotAnError(t *testing.T) {
+	a := &application{
+		logger: testDiscardLogger(),
+		snap:   metrics.New(),
+		source: xraycfg.Directory{Path: t.TempDir()},
+		policy: directoryPolicy(),
+	}
+
+	cfgs, err := a.fetchSource(context.Background())
+	if err != nil {
+		t.Fatalf("fetchSource: %v", err)
+	}
+	if cfgs == nil || len(cfgs) != 0 {
+		t.Errorf("configs = %#v, want an empty, non-nil set", cfgs)
+	}
+
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_total"); !ok || got != 1 {
+		t.Errorf("xray_exporter_config_fetch_total = %v (present %v), want 1", got, ok)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_errors_total"); !ok || got != 0 {
+		t.Errorf("xray_exporter_config_fetch_errors_total = %v (present %v), want 0", got, ok)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok || got <= 0 {
+		t.Errorf("xray_exporter_config_fetch_timestamp_seconds = %v (present %v), want a success time", got, ok)
+	}
+}
+
 func TestHandlerServesMetricsAndHealthz(t *testing.T) {
-	a := &application{snap: metrics.New()}
+	a := &application{snap: metrics.New(), source: xraycfg.Directory{}, policy: directoryPolicy()}
 	a.snap.SetBuildInfo("test", "go-test")
 
 	srv := httptest.NewServer(a.handler())
@@ -72,17 +365,18 @@ func get(t *testing.T, url string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
-func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
+func TestReloadUsesDirectorySource(t *testing.T) {
 	targetsPath := filepath.Join(t.TempDir(), "xray-exporter-config.yml")
 	targetsBody := "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n"
 	if err := os.WriteFile(targetsPath, []byte(targetsBody), 0o644); err != nil {
 		t.Fatalf("write targets: %v", err)
 	}
 
+	dir := t.TempDir() // readable, and the last config was deleted
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	a := &application{
 		env: Env{
-			ConfigDir:    t.TempDir(), // readable, and the last config was deleted
+			ConfigDir:    dir,
 			ConfigFile:   targetsPath,
 			Interval:     time.Hour,
 			Workers:      1,
@@ -93,6 +387,8 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 		targets:  &config.ExporterConfig{DNSProbeDomain: "example.com", DNSUpstream: "9.9.9.9:53", Targets: []config.Target{{Host: "example.com"}}},
 		upstream: xraycfg.Upstream{Host: "9.9.9.9", Port: 53},
 		manager:  testManager(logger),
+		source:   xraycfg.Directory{Path: dir},
+		policy:   directoryPolicy(),
 		configs:  []xraycfg.Config{{Name: "nl1"}},
 		seeded:   map[string]struct{}{"nl1": {}},
 	}
@@ -119,6 +415,17 @@ func TestReloadEmptyConfigDirectoryDropsSeries(t *testing.T) {
 	if !strings.Contains(body, "xray_exporter_config_reload_errors_total 0") {
 		t.Errorf("empty directory was counted as a reload error:\n%s", body)
 	}
+	// An empty directory is a successful read: it advances the fetch timestamp
+	// instead of counting a fetch error.
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_total"); !ok || got != 1 {
+		t.Errorf("xray_exporter_config_fetch_total = %v (present %v), want 1", got, ok)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_errors_total"); !ok || got != 0 {
+		t.Errorf("xray_exporter_config_fetch_errors_total = %v (present %v), want 0", got, ok)
+	}
+	if _, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok {
+		t.Error("xray_exporter_config_fetch_timestamp_seconds is absent after an empty-directory read")
+	}
 }
 
 // An interrupted pass logs neither completion nor overrun for unvisited jobs.
@@ -133,6 +440,8 @@ func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 		},
 		logger:  logger,
 		snap:    metrics.New(),
+		source:  xraycfg.Directory{},
+		policy:  directoryPolicy(),
 		targets: &config.ExporterConfig{},
 		manager: testManager(logger),
 	}
@@ -152,7 +461,11 @@ func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 // DEBUG per success, nothing for a skipped config.
 func TestLogProbesReportsEachOutcome(t *testing.T) {
 	var logs bytes.Buffer
-	a := &application{logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	a := &application{
+		logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		source: xraycfg.Directory{},
+		policy: directoryPolicy(),
+	}
 
 	exp := metrics.Export{Configs: []metrics.ConfigExport{
 		{
@@ -209,7 +522,7 @@ func TestLogProbesReportsEachOutcome(t *testing.T) {
 func TestApplyLogsAStartFailureOnce(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	a := &application{logger: logger, snap: metrics.New(), manager: testManager(logger)}
+	a := &application{logger: logger, snap: metrics.New(), manager: testManager(logger), source: xraycfg.Directory{}, policy: directoryPolicy()}
 	t.Cleanup(func() {
 		if err := a.manager.Close(); err != nil {
 			t.Errorf("Manager.Close: %v", err)
