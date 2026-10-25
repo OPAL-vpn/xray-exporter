@@ -69,13 +69,17 @@ type application struct {
 
 	source xraycfg.Source
 	policy sourcePolicy
+	// sourceConfig is the block that built source; a reload compares it to the
+	// new one to decide whether the source must be rebuilt. refreshMu guards it.
+	sourceConfig *config.XrayConfigSource
 
 	mu       sync.RWMutex
 	targets  *config.ExporterConfig
 	manager  *xrayproc.Manager
 	upstream xraycfg.Upstream
 
-	// configs and seeded belong to the reload goroutine.
+	// configs and seeded are the reconciled set and the names the snapshot
+	// declares; they are written only while holding refreshMu.
 	configs []xraycfg.Config
 	seeded  map[string]struct{}
 
@@ -113,18 +117,19 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 	}
 
 	a := &application{
-		env:         env,
-		opts:        opts,
-		logger:      logger,
-		xrayLogger:  xrayLogger,
-		logFile:     logFile,
-		snap:        metrics.New(),
-		targets:     targets,
-		upstream:    upstream,
-		source:      source,
-		policy:      policy,
-		seeded:      make(map[string]struct{}),
-		refreshWake: make(chan struct{}, 1),
+		env:          env,
+		opts:         opts,
+		logger:       logger,
+		xrayLogger:   xrayLogger,
+		logFile:      logFile,
+		snap:         metrics.New(),
+		targets:      targets,
+		upstream:     upstream,
+		source:       source,
+		policy:       policy,
+		sourceConfig: targets.XrayConfigSource,
+		seeded:       make(map[string]struct{}),
+		refreshWake:  make(chan struct{}, 1),
 	}
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
@@ -158,6 +163,10 @@ func loadExporterConfig(path string) (*config.ExporterConfig, xraycfg.Upstream, 
 // close stops the cycle and instances, then releases the log file.
 func (a *application) close() {
 	a.interruptCycle()
+
+	// A refresh in flight still applies instances; the manager must outlive it.
+	a.refreshMu.Lock()
+	a.refreshMu.Unlock()
 
 	if err := a.manager.Close(); err != nil {
 		a.logger.Error("closing xray instances", "error", err)

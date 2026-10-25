@@ -37,6 +37,9 @@ func (a *application) serve(ctx context.Context) error {
 	ticker := time.NewTicker(a.env.Interval)
 	defer ticker.Stop()
 
+	// Refresh on the source's own interval; SIGHUP reloads the inputs instead.
+	go a.refreshLoop(runCtx)
+
 	// Measure at startup so the first scrape does not wait an interval.
 	a.startCycle(runCtx, a.env.Interval/2)
 
@@ -48,7 +51,9 @@ func (a *application) serve(ctx context.Context) error {
 		case sig := <-signals:
 			if sig == syscall.SIGHUP {
 				a.logger.Info("reloading configuration")
-				a.reload(runCtx)
+				// The reload fetches, so it must not block the signal loop; a
+				// shutdown waits for it below.
+				go a.reload(runCtx)
 				continue
 			}
 			a.logger.Info("shutting down", "signal", sig.String())
@@ -84,6 +89,11 @@ func (a *application) handler() http.Handler {
 // stop ends the cycle, closes the instances and shuts the listener down.
 func (a *application) stop(server *http.Server) error {
 	a.interruptCycle()
+
+	// A refresh or reload in flight would apply to a closed manager; the run
+	// context is already cancelled, so this waits for it to finish.
+	a.refreshMu.Lock()
+	a.refreshMu.Unlock()
 
 	if err := a.manager.Close(); err != nil {
 		a.logger.Error("closing xray instances", "error", err)

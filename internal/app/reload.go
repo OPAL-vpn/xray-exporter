@@ -3,8 +3,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"time"
 
+	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
@@ -14,7 +16,12 @@ import (
 // arrives.
 func (a *application) refreshLoop(ctx context.Context) {
 	for {
+		// A reload swaps the source, so its interval is read under the lock that
+		// guards the swap.
+		a.refreshMu.Lock()
 		d := a.source.Refresh()
+		a.refreshMu.Unlock()
+
 		if d <= 0 {
 			select {
 			case <-ctx.Done():
@@ -43,6 +50,12 @@ func (a *application) refreshLoop(ctx context.Context) {
 func (a *application) refresh(ctx context.Context) {
 	a.refreshMu.Lock()
 	defer a.refreshMu.Unlock()
+
+	// Shutdown waits for a fetch already in flight, not for one ordered after it:
+	// a cancelled run must not publish instances on a closed manager.
+	if ctx.Err() != nil {
+		return
+	}
 
 	next, err := a.fetchSource(ctx)
 	if err != nil {
@@ -144,74 +157,137 @@ func (a *application) allRunning(cfgs []xraycfg.Config) bool {
 	return true
 }
 
-// reload reconciles each input independently; a rejected file keeps its previous
-// state. A changed DNS upstream restarts every instance because the injected
-// dokodemo-door inbound carries the address.
+// reload re-reads the exporter config and the source it names, then reconciles
+// the instances against one fetched set. A rejected input keeps its previous
+// state. It is a sibling of refresh, not a caller: refreshMu serializes them,
+// and the whole body runs under it because every input it publishes is read by
+// a fetch.
 func (a *application) reload(ctx context.Context) {
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
+
+	// Shutdown waits for a reload already in flight, not for one ordered after
+	// it: a cancelled run must not publish instances on a closed manager.
+	if ctx.Err() != nil {
+		return
+	}
+
+	// A reload always restarts the measurement, even when it rejects an input:
+	// interrupting the cycle must not leave the exporter unmeasured until the
+	// next tick.
+	defer a.startCycle(ctx, a.env.Interval/2)
+
 	a.interruptCycle()
 
-	applied := true
-	restartedAll := false
-
-	if targets, upstream, err := loadExporterConfig(a.env.ConfigFile); err != nil {
-		applied = false
+	targets, upstream, err := loadExporterConfig(a.env.ConfigFile)
+	if err != nil {
 		a.logger.Error("reload: exporter config rejected, keeping previous", "error", err)
-	} else {
-		a.mu.Lock()
-		restartedAll = upstream != a.upstream
-		a.upstream = upstream
-		a.targets = targets
-		a.mu.Unlock()
+		a.snap.IncReloadError()
+		return
+	}
 
-		if restartedAll {
-			a.mu.Lock()
-			previous := a.manager
-			a.manager = xrayproc.NewManager(upstream, a.env.XrayLogLevel, a.xrayLogger)
-			a.mu.Unlock()
-			if err := previous.Close(); err != nil {
-				a.logger.Error("closing xray instances", "error", err)
-			}
+	// Build the new source before publishing anything, so a rejected block leaves
+	// the inputs it replaced untouched.
+	source, policy := a.source, a.policy
+	sourceChanged := !reflect.DeepEqual(targets.XrayConfigSource, a.sourceConfig)
+	if sourceChanged {
+		if source, policy, err = newSource(targets, a.env.ConfigDir); err != nil {
+			a.logger.Error("reload: config source rejected, keeping previous", "error", err)
+			a.snap.IncReloadError()
+			return
 		}
 	}
 
-	fetched, err := a.fetchSource(ctx)
-	switch {
-	case err != nil:
-		applied = false
-		a.logger.Error("reload: config source rejected, keeping previous", "error", err)
-	case len(fetched) == 0:
-		// A readable but empty set is authoritative: every config left.
-		a.configs = nil
-		a.logger.Info("reload: config source empty, stopping every config")
-	default:
-		a.configs = fetched
+	restartedAll := a.applyInputs(targets, upstream)
+	if sourceChanged {
+		a.source = source
+		a.policy = policy
+		a.sourceConfig = targets.XrayConfigSource
+		a.snap.SetSource(source.Kind())
+		// A parked loop reads the old interval; wake it so the new source's own
+		// interval is used from here on.
+		a.wakeRefresh()
+		a.logger.Info("reload: config source changed", "type", source.Kind())
 	}
-
-	_, stopped, accepted := a.apply(a.configs)
-	if !accepted {
-		applied = false
-	}
-
-	// A stopped or restarted instance's measurements describe a path that no
-	// longer exists; an unchanged config keeps its last values.
+	// A replaced manager has no instances, and every measurement through the old
+	// ones describes a path that no longer exists.
 	if restartedAll {
 		for name := range a.seeded {
 			a.snap.Drop(name)
 		}
-	} else {
-		for _, name := range stopped {
-			a.snap.Drop(name)
-		}
 	}
 
-	a.seed(time.Now())
+	now := time.Now()
+	fetched, err := a.fetchSource(ctx)
+	if err != nil {
+		a.snap.IncReloadError()
+		if a.policy.failClosed {
+			a.failClosed(now, err)
+			return
+		}
+		a.logger.Error("reload: config fetch failed, keeping previous", "error", err)
+		if restartedAll {
+			// The kept configs still carry the DNS upstream and the manager is new,
+			// so start them rather than leave the exporter with no instances.
+			a.apply(a.configs)
+			a.seed(now)
+		}
+		return
+	}
 
+	a.configs = fetched
+	if len(fetched) == 0 {
+		// A readable but empty set is authoritative: every config left.
+		a.logger.Info("reload: config source empty, stopping every config")
+	}
+	_, stopped, accepted := a.apply(fetched)
+	// A stopped instance's measurements describe a path that no longer exists.
+	for _, name := range stopped {
+		a.snap.Drop(name)
+	}
+	a.seed(now)
+
+	// A fetched set is authoritative: changing it is a reload even when one of
+	// its configs fails to start. For a panel that is a result; a directory is
+	// hand-written, so there it is a reload error.
+	applied := a.policy.failClosed || accepted
 	if applied {
 		a.snap.IncReload()
 	} else {
 		a.snap.IncReloadError()
 	}
-	a.logger.Info("configuration reloaded", "configs", len(a.configs), "applied", applied)
+	a.logger.Info("configuration reloaded", "configs", len(fetched), "applied", applied)
+}
 
-	a.startCycle(ctx, a.env.Interval/2)
+// applyInputs publishes the reloaded exporter config and reports whether the
+// DNS upstream changed. A changed upstream replaces the manager, because the
+// injected dokodemo-door inbound of every instance carries the address.
+func (a *application) applyInputs(targets *config.ExporterConfig, upstream xraycfg.Upstream) bool {
+	a.mu.Lock()
+	restartedAll := upstream != a.upstream
+	a.upstream = upstream
+	a.targets = targets
+	var previous *xrayproc.Manager
+	if restartedAll {
+		previous = a.manager
+		a.manager = xrayproc.NewManager(upstream, a.env.XrayLogLevel, a.xrayLogger)
+	}
+	a.mu.Unlock()
+
+	if previous == nil {
+		return false
+	}
+	if err := previous.Close(); err != nil {
+		a.logger.Error("closing xray instances", "error", err)
+	}
+	return true
+}
+
+// wakeRefresh interrupts a parked refresh loop. A wake-up is advisory, so a
+// full buffer drops it rather than blocking the reload.
+func (a *application) wakeRefresh() {
+	select {
+	case a.refreshWake <- struct{}{}:
+	default:
+	}
 }

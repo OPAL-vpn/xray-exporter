@@ -33,16 +33,28 @@ func testManager(logger *slog.Logger) *xrayproc.Manager {
 	return xrayproc.NewManager(xraycfg.Upstream{Host: "9.9.9.9", Port: 53}, "warning", logger)
 }
 
-// exporterConfigFile writes a minimal exporter config; sourceBlock is appended
+// exporterConfigBody renders a minimal exporter config; sourceBlock is appended
 // verbatim so a test can name an xray_config_source.
+func exporterConfigBody(sourceBlock string) string {
+	return "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n" + sourceBlock
+}
+
+// writeExporterConfig replaces the exporter config in place, the way an
+// operator's edit does before a SIGHUP.
+func writeExporterConfig(t *testing.T, path, sourceBlock string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(exporterConfigBody(sourceBlock)), 0o644); err != nil {
+		t.Fatalf("write exporter config: %v", err)
+	}
+}
+
+// exporterConfigFile writes a minimal exporter config and returns its path.
 func exporterConfigFile(t *testing.T, sourceBlock string) string {
 	t.Helper()
 
-	body := "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: example.com\n" + sourceBlock
 	path := filepath.Join(t.TempDir(), "xray-exporter-config.yml")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatalf("write exporter config: %v", err)
-	}
+	writeExporterConfig(t, path, sourceBlock)
 	return path
 }
 
@@ -429,6 +441,152 @@ func TestReloadUsesDirectorySource(t *testing.T) {
 	}
 }
 
+// freedomJSON is a client config that always starts; a directory source names
+// it after its file.
+const freedomJSON = `{"outbounds":[{"protocol":"freedom","settings":{}}]}`
+
+// writeXrayConfig writes one config into a directory source.
+func writeXrayConfig(t *testing.T, dir, name, body string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(dir, name+".json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s.json: %v", name, err)
+	}
+}
+
+// directoryApp starts an application on the env's config directory.
+func directoryApp(t *testing.T, dir, configFile string) *application {
+	t.Helper()
+
+	a, err := newApplication(startupEnv(t, configFile, dir), Options{Version: "test"}, testDiscardLogger())
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	t.Cleanup(a.close)
+	return a
+}
+
+// A reload that changes the source block replaces the source: the next fetch
+// reads the new kind, source_info follows it and the old configs lose their
+// instances.
+func TestReloadRebuildsChangedSource(t *testing.T) {
+	dir := t.TempDir()
+	writeXrayConfig(t, dir, "local", freedomJSON)
+	configFile := exporterConfigFile(t, "")
+	a := directoryApp(t, dir, configFile)
+	defer a.interruptCycle()
+
+	if got := instancePort(a, "local"); got == 0 {
+		t.Fatal("the startup config has no instance")
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_source_info", "type", "directory"); !ok || got != 1 {
+		t.Errorf("source_info{type=\"directory\"} = %v (present %v), want 1", got, ok)
+	}
+
+	panelURL := panel(t, http.StatusOK, panelEntries(freedomEntry("remote")))
+	writeExporterConfig(t, configFile, remnawaveSourceBlock(panelURL))
+	a.reload(context.Background())
+
+	if got, want := a.source.Kind(), "remnawave"; got != want {
+		t.Errorf("source kind = %q, want %q", got, want)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_source_info", "type", "remnawave"); !ok || got != 1 {
+		t.Errorf("source_info{type=\"remnawave\"} = %v (present %v), want 1", got, ok)
+	}
+	if _, ok := snapValue(t, a.snap, "xray_exporter_config_source_info", "type", "directory"); ok {
+		t.Error("source_info still reports the replaced directory source")
+	}
+	if running, declared := configRunning(t, a.snap, "remote"); !declared || !running {
+		t.Errorf("config remote running = %v (declared %v), want the panel config fetched and started", running, declared)
+	}
+	if _, declared := configRunning(t, a.snap, "local"); declared {
+		t.Error("config local survived a reload onto a different source")
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_total"), 2.0; got != want {
+		t.Errorf("fetch_total = %v, want %v: the reload fetches the new source once", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_total"), 1.0; got != want {
+		t.Errorf("reload_total = %v, want %v", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_errors_total"), 0.0; got != want {
+		t.Errorf("reload_errors_total = %v, want %v", got, want)
+	}
+
+	// An unchanged block keeps the source it already built.
+	source := a.source
+	a.reload(context.Background())
+	if a.source != source {
+		t.Error("a reload with an unchanged source block rebuilt the source")
+	}
+}
+
+// A failed SIGHUP fetch on a panel fails closed and counts both the fetch and
+// the reload error; the previous configs stay declared with running=0.
+func TestReloadRemnawaveFetchFailureFailsClosed(t *testing.T) {
+	a, p := refreshApp(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
+	defer a.interruptCycle()
+
+	fetchedAt, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds")
+	if !ok {
+		t.Fatal("the startup fetch has no timestamp")
+	}
+
+	p.set(http.StatusInternalServerError, "")
+	a.reload(context.Background())
+
+	if got := len(a.instances()); got != 0 {
+		t.Errorf("instances = %d, want every instance stopped after a failed fetch", got)
+	}
+	if running, declared := configRunning(t, a.snap, "local"); !declared {
+		t.Error("config local lost its series, want it declared with running=0")
+	} else if running {
+		t.Error("config local running = true, want false after a failed fetch")
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 1.0; got != want {
+		t.Errorf("fetch_errors_total = %v, want %v", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_errors_total"), 1.0; got != want {
+		t.Errorf("reload_errors_total = %v, want %v", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_total"), 0.0; got != want {
+		t.Errorf("reload_total = %v, want %v: a failed fetch is not a reload", got, want)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok || got != fetchedAt {
+		t.Errorf("fetch timestamp = %v (present %v), want the previous success %v", got, ok, fetchedAt)
+	}
+}
+
+// A directory is hand-written, so a config that cannot start is a reload error
+// rather than the published result a panel config is.
+func TestReloadDirectoryStartFailureCountsError(t *testing.T) {
+	dir := t.TempDir()
+	writeXrayConfig(t, dir, "local", freedomJSON)
+	a := directoryApp(t, dir, exporterConfigFile(t, ""))
+	defer a.interruptCycle()
+
+	if running, declared := configRunning(t, a.snap, "local"); !declared || !running {
+		t.Fatalf("config local running = %v (declared %v), want it started at startup", running, declared)
+	}
+
+	writeXrayConfig(t, dir, "local", `{"outbounds":[{"protocol":"nope"}]}`)
+	a.reload(context.Background())
+
+	if running, declared := configRunning(t, a.snap, "local"); !declared {
+		t.Fatal("config local lost its series, want it kept with running=0")
+	} else if running {
+		t.Error("config local running = true, want false: it cannot start")
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_errors_total"), 1.0; got != want {
+		t.Errorf("reload_errors_total = %v, want %v", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_total"), 0.0; got != want {
+		t.Errorf("reload_total = %v, want %v: a failed start is a reload error for a directory", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 0.0; got != want {
+		t.Errorf("fetch_errors_total = %v, want %v: the directory was read fine", got, want)
+	}
+}
+
 // An interrupted pass logs neither completion nor overrun for unvisited jobs.
 func TestCycleInterruptedPassLogsNeitherOutcome(t *testing.T) {
 	var logs bytes.Buffer
@@ -580,6 +738,49 @@ func (p *refreshPanel) set(status int, body string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.status, p.body = status, body
+}
+
+// gatePanel serves body and can hold a fetch inside the handler until open, so
+// a test can race a refresh against shutdown.
+type gatePanel struct {
+	body    string
+	entered chan struct{}
+	release chan struct{}
+	opened  sync.Once
+
+	mu    sync.Mutex
+	gated bool
+}
+
+func newGatePanel(body string) *gatePanel {
+	return &gatePanel{body: body, entered: make(chan struct{}, 1), release: make(chan struct{})}
+}
+
+func (p *gatePanel) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	p.mu.Lock()
+	gated := p.gated
+	p.mu.Unlock()
+
+	if gated {
+		select {
+		case p.entered <- struct{}{}:
+		default:
+		}
+		<-p.release
+	}
+	_, _ = io.WriteString(w, p.body)
+}
+
+// gate holds the next fetches until open.
+func (p *gatePanel) gate() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gated = true
+}
+
+// open releases every held and later fetch; it is safe to call twice.
+func (p *gatePanel) open() {
+	p.opened.Do(func() { close(p.release) })
 }
 
 // refreshApp starts an application on a Remnawave source serving body.
@@ -906,6 +1107,126 @@ func TestRefreshUnchangedMissingInstanceRetries(t *testing.T) {
 	}
 }
 
+// testDiscardLogger returns a logger that drops every record.
 func testDiscardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// A refresh and a reload are siblings: both reconcile the same instances, so
+// they must complete concurrently under -race without corrupting the set.
+func TestReloadRunsConcurrentWithRefresh(t *testing.T) {
+	a, _ := refreshApp(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
+	defer a.interruptCycle()
+
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			a.refresh(context.Background())
+		}()
+		go func() {
+			defer wg.Done()
+			a.reload(context.Background())
+		}()
+	}
+	wg.Wait()
+
+	if got := len(a.instances()); got != 1 {
+		t.Fatalf("instances = %d, want the one config", got)
+	}
+	if running, declared := configRunning(t, a.snap, "local"); !declared || !running {
+		t.Errorf("config local running = %v (declared %v), want it running", running, declared)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_total"), 7.0; got != want {
+		t.Errorf("fetch_total = %v, want %v: one startup, three refreshes, three reloads", got, want)
+	}
+	// Every reload applies a set, so each counts; no refresh saw a changed set.
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_total"), 3.0; got != want {
+		t.Errorf("reload_total = %v, want %v", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_errors_total"), 0.0; got != want {
+		t.Errorf("reload_errors_total = %v, want %v", got, want)
+	}
+}
+
+// A fetch ordered after the run context was cancelled publishes nothing: the
+// shutdown wait covers the one in flight, not a later one.
+func TestFetchAfterCancelPublishesNothing(t *testing.T) {
+	a, _ := refreshApp(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
+	defer a.interruptCycle()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	a.refresh(ctx)
+	a.reload(ctx)
+
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_total"), 1.0; got != want {
+		t.Errorf("fetch_total = %v, want %v: neither cancelled fetch ran", got, want)
+	}
+	if got := len(a.instances()); got != 1 {
+		t.Errorf("instances = %d, want the startup instance untouched", got)
+	}
+}
+
+// Shutdown waits for an in-flight refresh under the reload lock, so nothing
+// applies to a manager that is already closed.
+func TestShutdownWaitsForRefresh(t *testing.T) {
+	p := newGatePanel(panelEntries(freedomEntry("local")))
+	srv := httptest.NewServer(p)
+	t.Cleanup(srv.Close)
+
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(srv.URL)), t.TempDir())
+	a, err := newApplication(env, Options{Version: "test"}, testDiscardLogger())
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	t.Cleanup(a.close)
+	defer p.open()
+
+	if got := len(a.instances()); got != 1 {
+		t.Fatalf("instances = %d, want the startup config", got)
+	}
+
+	p.gate()
+	refreshed := make(chan struct{})
+	go func() {
+		defer close(refreshed)
+		a.refresh(context.Background())
+	}()
+
+	select {
+	case <-p.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the refresh never reached the panel")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		a.close()
+	}()
+
+	select {
+	case <-closed:
+		t.Fatal("close returned while a refresh held the reload lock")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	p.open()
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the refresh did not finish after the panel answered")
+	}
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("close did not finish after the refresh released the lock")
+	}
+
+	if got := len(a.instances()); got != 0 {
+		t.Errorf("instances = %d after close, want 0: an apply after Close left instances behind", got)
+	}
 }
