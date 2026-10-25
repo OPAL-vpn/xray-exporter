@@ -1,6 +1,8 @@
 # Copy ../examples/xray-exporter-config.yml to ./xray-exporter-config.yml and
 # put your xray client configs in ./xray/ (one JSON file per config; the
-# filename stem is the `config` label) before starting.
+# filename stem is the `config` label) before starting. To fetch them from a
+# Remnawave panel instead, uncomment `xray_config_source` in that file; the
+# ./xray mount below is then unused and can be dropped.
 services:
   xray-exporter:
     image: ghcr.io/opal-vpn/xray-exporter:latest

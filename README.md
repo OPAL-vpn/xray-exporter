@@ -7,8 +7,8 @@ is served at `/metrics`.
 
 ## What it measures
 
-For every config in the config directory (the filename stem is the `config`
-label), once per `INTERVAL` (default 5 min):
+For every config in the config set (a filename stem, or the panel's `remarks`;
+see [Config sources](#config-sources)), once per `INTERVAL` (default 5 min):
 
 - **HTTPS through the tunnel**, for every target: status, certificate verdict,
   TTFB and total time. Requests use an injected socks5 inbound, so they take a
@@ -30,7 +30,8 @@ curl -s localhost:9787/metrics | grep '^xray_'
 ```
 
 A fresh deployment measures nothing until `xray-exporter-config.yml` exists and
-at least one config JSON is in `xray/`.
+at least one config JSON is in `xray/` — or, with a
+[Remnawave source](#config-sources) configured, until the panel returns one.
 
 `docker compose` pulls the released image. Without compose, run the same image
 from the directory holding `xray/` and `xray-exporter-config.yml`:
@@ -74,8 +75,8 @@ sets.
 | Env | Default | Purpose |
 |---|---|---|
 | `LISTEN_ADDR` | `:9787` | metrics listener |
-| `XRAY_CONFIG_DIR` | `/config/xray` | config directory, one JSON per config |
-| `EXPORTER_CONFIG_FILE` | `/config/xray-exporter-config.yml` | targets and resolvers |
+| `XRAY_CONFIG_DIR` | `/config/xray` | default directory for the directory source |
+| `EXPORTER_CONFIG_FILE` | `/config/xray-exporter-config.yml` | targets, resolvers and the config source |
 | `INTERVAL` | `5m` | cycle period |
 | `WORKERS` | `8` | concurrent probes per config |
 | `PROBE_TIMEOUT` | `10s` | per HTTP/DNS probe |
@@ -87,6 +88,122 @@ sets.
 
 `XRAY_LOCATION_ASSET` points at the image's baked-in `geoip.dat`/`geosite.dat`;
 override it only to mount your own.
+
+## Config sources
+
+`xray-exporter-config.yml` names where the configs come from in one optional
+block. Without it the exporter reads every `*.json` file in `XRAY_CONFIG_DIR`,
+as it always has.
+
+A directory, stated explicitly (the `path` defaults to `XRAY_CONFIG_DIR`):
+
+```yaml
+xray_config_source:
+  type: directory
+  path: /config/xray
+```
+
+A Remnawave panel, fetched every `refresh` (default `5m`; `0` fetches at startup
+and on `SIGHUP` only):
+
+```yaml
+xray_config_source:
+  type: remnawave
+  url: https://panel.example.com/api/sub/<shortUuid>
+  refresh: 5m
+```
+
+`url` is the subscription *API* URL: the exporter appends `/json` unless the
+path already ends with it, and only the Xray JSON array form is accepted — a
+mihomo or plain-text subscription is a fetch failure. `path` and `url` are
+mutually exclusive, `refresh` is remnawave-only, and an unknown key in the
+block rejects the file. The block replaces nothing else: `targets:`,
+`dns_resolvers:` and `dns_probe_domain` keep their meaning for both sources.
+
+### The fetch is direct
+
+The panel is contacted straight from the probe host: no environment proxy
+(`HTTP_PROXY`/`HTTPS_PROXY` are ignored), no xray tunnel, no socks or DNS
+inbound, the system resolver, TLS verified, and redirects only within the same
+scheme and host. It is the one request outside a tunnel besides loopback (see
+[No direct traffic](#no-direct-traffic)). A host that reaches the panel only
+through a tunnel cannot fetch and shows the fail-closed state below; there is
+no proxy or tunnel fallback.
+
+One request per interval — none when `refresh: 0` — with
+`Accept: application/json`, a 20 s timeout and an 8 MiB body cap. No token and
+no cookie are sent.
+
+### When a fetch fails
+
+A non-2xx status, a timeout, invalid JSON or a body that is not a JSON array is
+a fetch failure, and the remnawave source fails closed:
+
+- every config from the last successful fetch stops and
+  `xray_config_running` reads 0 for all of them
+- their probes and resolvers reset to 0, their latency series disappear and
+  their timestamps move to the failure time
+- no measurement cycle runs
+- `xray_exporter_config_fetch_errors_total` moves, while
+  `xray_exporter_config_fetch_timestamp_seconds` keeps naming the last success
+
+The last good bytes are kept only to name those configs; they are never started
+from that cache. Recovery is a successful fetch, which applies its set normally.
+A failed first fetch is not fatal: the exporter starts with no configs, retries
+every `refresh`, and with `refresh: 0` waits for `SIGHUP`.
+
+A successful fetch of an empty array is not a failure: every config stops, the
+fetch timestamp advances and `xray_exporter_config_fetch_errors_total` stays
+flat. The fresh timestamp and the missing config series are the whole signal.
+
+### A changed set is normal
+
+A changed set is applied, counted in `xray_exporter_config_reload_total` and
+measured: new instances start, removed ones stop and lose their series,
+unchanged ones keep running. An unchanged set is a no-op while every config
+runs, and re-applied if an expected instance is missing — a start that failed,
+or a fail-closed outage.
+
+Config content is not validated: xray decides whether a config runs. A fetched
+config that cannot start is `xray_config_running` 0 with one WARN line and no
+`reload_errors_total` movement, and the next successful fetch retries it. The
+rest of the set keeps measuring; alert on `xray_config_running == 0` for this,
+not on the reload error counter.
+
+Labels come from the panel: a sanitised `remarks`, else the first outbound's
+`address-port`, else `config-N` in array order; duplicates get `-2`, `-3`, … and
+a label never fails the fetch. Renaming a host is a new series and the old one
+goes stale.
+
+### The directory source is unchanged
+
+It is read at startup and on `SIGHUP`, never on a timer. A startup with an
+empty or unreadable directory is fatal. On `SIGHUP` a read error keeps the
+previous set and counts a reload error, while a readable empty directory is
+authoritative and stops every config. Its reload errors keep their old meaning:
+a config that fails to start makes the reload an error.
+
+### The file is a credential
+
+The subscription URL embeds the probe user's shortUuid, so
+`xray-exporter-config.yml` is a credential: whoever holds it can read the whole
+subscription. Keep it out of images, logs and issues, mount it read-only, and
+treat it as sensitive as the config files it replaces. The exporter never logs
+the URL — errors name only the panel host — and never the response body.
+
+### Migrating from `targets.yaml`
+
+`xray-exporter-config.yml` replaces `targets.yaml`, and `EXPORTER_CONFIG_FILE`
+replaces `TARGETS_FILE`. No alias is kept: a deployment still using the old
+name reads nothing, so rename the file and its mount and switch the variable.
+The YAML keys are unchanged, and `xray_config_source` is optional and additive,
+so the migration itself changes no measurement.
+
+The `opal-vpn` follow-up (a separate repository) renames
+`configs/xray-exporter/targets.yaml` and its compose mount, switches the env
+var, templates `xray_config_source` with the probe user's shortUuid, and stops
+running the Python fetch that copies `.xray-exporter-configs`. Nothing in this
+repository depends on that change.
 
 ## Metrics
 
@@ -114,6 +231,10 @@ self-labelling.
 | `xray_cycle_targets_total` | config | targets attempted |
 | `xray_exporter_config_reload_total` | — | counter |
 | `xray_exporter_config_reload_errors_total` | — | counter |
+| `xray_exporter_config_fetch_total` | — | counter, fetch attempts |
+| `xray_exporter_config_fetch_errors_total` | — | counter, fetches with no usable set |
+| `xray_exporter_config_fetch_timestamp_seconds` | — | last successful fetch; absent until then |
+| `xray_exporter_config_source_info` | type | 1, the configured source |
 | `xray_build_info` | version, go_version | 1 |
 
 Every expected series exists from the first scrape with `up` at 0. Latency
@@ -122,13 +243,42 @@ poison averages. A failed probe sets `up` to 0, moves the timestamp forward and
 keeps the last successful latency, so staleness is visible through the
 timestamp. Series disappear only with their config or target.
 
+### Source health
+
+Four queries cover the fetch. The three staleness queries are gated on
+`source_info{type="remnawave"}`: directory mode stamps the fetch timestamp only
+on `SIGHUP`, so its age says nothing about health.
+
+```promql
+# stale fetch: no success for longer than three default 5m refreshes
+time() - max(xray_exporter_config_fetch_timestamp_seconds) > 900
+  and on() (count(xray_exporter_config_source_info{type="remnawave"}) > 0)
+
+# no first success: the timestamp is absent, so nothing was ever fetched
+absent(xray_exporter_config_fetch_timestamp_seconds)
+  and on() (count(xray_exporter_config_source_info{type="remnawave"}) > 0)
+
+# fetch error rate: share of attempts that returned no usable set
+rate(xray_exporter_config_fetch_errors_total[15m])
+  / rate(xray_exporter_config_fetch_total[15m])
+
+# stalled loop: no attempt at all in the last three refresh intervals
+increase(xray_exporter_config_fetch_total[15m]) == 0
+  and on() (count(xray_exporter_config_source_info{type="remnawave"}) > 0)
+```
+
+A fetch outage also blanks the fleet: every known config sits at
+`xray_config_running` 0 while the timestamp ages. An empty subscription is the
+opposite pair — a fresh timestamp and no config series at all.
+
 ## No direct traffic
 
-The exporter sends no traffic outside a tunnel. HTTP and TLS probes, DoH, DoT
-and the UDP DNS probe all reach their peers through an xray instance's
-loopback inbound, so a config's `routing` decides the path. Only loopback is
-dialed directly: the SOCKS port and DNS inbound the exporter starts, and the
-free-port probe.
+The exporter sends no traffic outside a tunnel, with one exception: the config
+source fetch itself (see [Config sources](#config-sources)). HTTP and TLS
+probes, DoH, DoT and the UDP DNS probe all reach their peers through an xray
+instance's loopback inbound, so a config's `routing` decides the path. Only
+loopback is dialed directly: the SOCKS port and DNS inbound the exporter starts,
+and the free-port probe.
 
 A tunnel that is down therefore surfaces as failed probes and
 `xray_config_running` 0, not as measurements from a direct path.
@@ -136,8 +286,11 @@ A tunnel that is down therefore surfaces as failed probes and
 ## Logs
 
 The exporter logs `slog` `key=value` lines to stdout: failed probes, one cycle
-summary, instance start/failure/reload. Successful probes log at debug;
-`LOG_LEVEL` (default `info`) sets the threshold.
+summary, instance start/failure/reload, and the outcome of each config fetch.
+Successful probes and unchanged fetches log at debug; `LOG_LEVEL` (default
+`info`) sets the threshold. A config that cannot start is logged at ERROR for
+a directory source and at WARN for a fetched one, where it is a test result
+rather than an exporter error.
 
 xray registers its log handler **globally**, so with several configs in one
 process a line cannot name its config. A failed start is attributed with

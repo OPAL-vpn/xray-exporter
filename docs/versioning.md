@@ -18,7 +18,8 @@ The "API" of a long-running exporter is what operators and dashboards depend on:
 - environment variables and their defaults, as listed in the README's
   configuration table
 - the `xray-exporter-config.yml` schema: `dns_probe_domain`, `dns_upstream`,
-  `targets[].host`, `dns_resolvers[].name` with `doh_url` or `dot_host`
+  `targets[].host`, `dns_resolvers[].name` with `doh_url` or `dot_host`, and
+  `xray_config_source` with `type`, `path`, `url` and `refresh`
 - CLI flags (`--once`, `--out`, `--deadline`, `--version`) and the shape of the
   `--once` report
 - the image name `ghcr.io/opal-vpn/xray-exporter`, its tag scheme, and the
