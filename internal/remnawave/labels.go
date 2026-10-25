@@ -32,6 +32,9 @@ func sanitizeLabel(s string) string {
 func labelsFor(entries []json.RawMessage) []string {
 	labels := make([]string, len(entries))
 	used := make(map[string]bool, len(entries))
+	// nextSuffix is the first suffix worth trying for a base label: every lower
+	// one is already used and never released, so k duplicates cost O(k).
+	nextSuffix := make(map[string]int, len(entries))
 	for i, entry := range entries {
 		label := sanitizeLabel(remark(entry))
 		if label == "" {
@@ -42,8 +45,17 @@ func labelsFor(entries []json.RawMessage) []string {
 		}
 
 		unique := label
-		for n := 2; used[unique]; n++ {
+		if used[unique] {
+			n := nextSuffix[label]
+			if n < 2 {
+				n = 2
+			}
 			unique = fmt.Sprintf("%s-%d", label, n)
+			for used[unique] {
+				n++
+				unique = fmt.Sprintf("%s-%d", label, n)
+			}
+			nextSuffix[label] = n + 1
 		}
 		used[unique] = true
 		labels[i] = unique

@@ -71,6 +71,10 @@ func New(rawURL string, interval time.Duration) (*Source, error) {
 
 func (*Source) Kind() string { return "remnawave" }
 
+// Host returns the panel's host:port, the only part of the subscription URL a
+// log may name.
+func (s *Source) Host() string { return s.host }
+
 // Refresh returns the fetch interval given to New.
 func (s *Source) Refresh() time.Duration { return s.interval }
 

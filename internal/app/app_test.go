@@ -207,6 +207,82 @@ func TestNewSourceRemnawave(t *testing.T) {
 	}
 }
 
+// The startup log names the source kind and, for a panel, only its host: the
+// subscription path embeds the shortUuid.
+func TestStartupLogsConfigSource(t *testing.T) {
+	panelURL := panel(t, http.StatusOK, panelEntries(freedomEntry("local")))
+	subscription := panelURL + "/api/sub/short-secret"
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(subscription)), t.TempDir())
+
+	var logs bytes.Buffer
+	a, err := newApplication(env, Options{Version: "test"}, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	defer a.close()
+
+	line := ""
+	for _, candidate := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(candidate, `msg="config source"`) {
+			line = candidate
+			break
+		}
+	}
+	if line == "" {
+		t.Fatalf("no config source line in the startup log:\n%s", logs.String())
+	}
+
+	host := strings.TrimPrefix(panelURL, "http://")
+	for _, want := range []string{"type=remnawave", "host=" + host} {
+		if !strings.Contains(line, want) {
+			t.Errorf("config source line %q does not contain %q", line, want)
+		}
+	}
+	for _, leak := range []string{"/api/sub", "short-secret"} {
+		if strings.Contains(line, leak) {
+			t.Errorf("config source line %q leaks %q", line, leak)
+		}
+	}
+}
+
+// An empty subscription is a successful read: the exporter starts with no
+// configs and no fetch error.
+func TestStartupEmptyArrayStartsNothing(t *testing.T) {
+	panelURL := panel(t, http.StatusOK, "[]")
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(panelURL)), t.TempDir())
+
+	a, err := newApplication(env, Options{Version: "test"}, testDiscardLogger())
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	defer a.close()
+
+	if configs := a.snap.Export().Configs; len(configs) != 0 {
+		t.Errorf("configs = %+v, want none from an empty subscription", configs)
+	}
+	if got := len(a.instances()); got != 0 {
+		t.Errorf("instances = %d, want 0", got)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 0.0; got != want {
+		t.Errorf("fetch_errors_total = %v, want %v: an empty array is a successful set", got, want)
+	}
+	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok || got <= 0 {
+		t.Errorf("fetch timestamp = %v (present %v), want the success time", got, ok)
+	}
+}
+
+func TestNewSourceRejectsUnknownType(t *testing.T) {
+	cfg := &config.ExporterConfig{XrayConfigSource: &config.XrayConfigSource{Type: "other"}}
+
+	_, _, err := newSource(cfg, "/config/xray")
+	if err == nil {
+		t.Fatal("newSource with an unknown type: want an error")
+	}
+	if !strings.Contains(err.Error(), "type must be directory or remnawave") {
+		t.Errorf("error = %q, want it to name the accepted types", err)
+	}
+}
+
 func TestStartupFetchesRemnawaveConfigs(t *testing.T) {
 	panelURL := panel(t, http.StatusOK, `[{"remarks":"local","outbounds":[{"protocol":"freedom","settings":{}}]}]`)
 	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(panelURL)), t.TempDir())
@@ -554,6 +630,14 @@ func TestReloadRemnawaveFetchFailureFailsClosed(t *testing.T) {
 	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok || got != fetchedAt {
 		t.Errorf("fetch timestamp = %v (present %v), want the previous success %v", got, ok, fetchedAt)
 	}
+	// The deferred start must be skipped after a fail-closed fetch: the cycle
+	// only resumes once a fetch succeeds again.
+	a.cancelMu.Lock()
+	cancel := a.cancel
+	a.cancelMu.Unlock()
+	if cancel != nil {
+		t.Error("a fail-closed reload started a cycle, want none until a fetch succeeds")
+	}
 }
 
 // A directory is hand-written, so a config that cannot start is a reload error
@@ -855,6 +939,79 @@ func TestRefreshLoopParksAndStopsWithContext(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("refreshLoop still parked after the context was cancelled")
+	}
+}
+
+// intervalSource fetches on its own short interval and signals every attempt,
+// so a test can wait for a fetch instead of sleeping.
+type intervalSource struct {
+	interval time.Duration
+	fetched  chan struct{}
+}
+
+func (*intervalSource) Kind() string { return "test" }
+
+func (s *intervalSource) Refresh() time.Duration { return s.interval }
+
+func (s *intervalSource) Fetch(context.Context) ([]xraycfg.Config, error) {
+	select {
+	case s.fetched <- struct{}{}:
+	default:
+	}
+	return nil, nil
+}
+
+func TestRefreshLoopFetchesOnItsInterval(t *testing.T) {
+	fake := &intervalSource{interval: 10 * time.Millisecond, fetched: make(chan struct{}, 8)}
+	logger := testDiscardLogger()
+	a := &application{
+		env: Env{
+			Interval:        time.Hour,
+			Workers:         1,
+			ProbeTimeout:    time.Second,
+			ResolverTimeout: time.Second,
+		},
+		logger:         logger,
+		snap:           metrics.New(),
+		exporterConfig: &config.ExporterConfig{},
+		manager:        testManager(logger),
+		source:         fake,
+		policy:         remnawavePolicy(),
+		refreshWake:    make(chan struct{}, 1),
+	}
+	t.Cleanup(func() {
+		if err := a.manager.Close(); err != nil {
+			t.Errorf("Manager.Close: %v", err)
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.refreshLoop(ctx)
+	}()
+	stop := func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("refreshLoop did not exit after the context was cancelled")
+		}
+	}
+	defer stop()
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		select {
+		case <-fake.fetched:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("refreshLoop made %d of 2 fetches on a %s interval", attempt-1, fake.interval)
+		}
+	}
+
+	stop()
+	if got := counter(t, a.snap, "xray_exporter_config_fetch_total"); got < 2 {
+		t.Errorf("fetch_total = %v, want at least the 2 attempts the loop made", got)
 	}
 }
 

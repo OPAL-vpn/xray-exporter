@@ -450,6 +450,11 @@ func TestRejectSource(t *testing.T) {
 			want:   "xray_config_source: refresh is only valid for a remnawave source",
 		},
 		{
+			name:   "url on directory",
+			source: "type: directory\nurl: https://panel.test/api/sub/short",
+			want:   "xray_config_source: url is only valid for a remnawave source",
+		},
+		{
 			name:   "negative refresh",
 			source: "type: remnawave\nurl: https://panel.test/api/sub/short\nrefresh: -1s",
 			want:   "xray_config_source: refresh must not be negative",

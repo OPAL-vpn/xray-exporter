@@ -134,6 +134,7 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
 	a.snap.SetSource(source.Kind())
+	a.logger.Info("config source", "type", source.Kind(), "host", sourceHost(source))
 
 	// The first fetch has no request of its own to cancel; the source bounds it.
 	cfgs, err := a.initialConfigs(context.Background())

@@ -130,7 +130,7 @@ func (s *XrayConfigSource) validate() error {
 	switch s.Type {
 	case "directory":
 		if s.URL != "" {
-			return errors.New("path and url are mutually exclusive")
+			return errors.New("url is only valid for a remnawave source")
 		}
 		if s.Refresh != "" {
 			return errors.New("refresh is only valid for a remnawave source")

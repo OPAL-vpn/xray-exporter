@@ -26,19 +26,37 @@ type sourcePolicy struct {
 // newSource selects the config source named by cfg. configDir is the default
 // directory when the block names no path.
 func newSource(cfg *config.ExporterConfig, configDir string) (xraycfg.Source, sourcePolicy, error) {
-	if cfg.XrayConfigSource == nil || cfg.XrayConfigSource.Type == "directory" {
+	if cfg.XrayConfigSource == nil {
+		return xraycfg.Directory{Path: configDir}, directoryPolicy(), nil
+	}
+
+	// The config layer already rejects an unknown type; repeating the switch here
+	// keeps the selection from silently defaulting to a remote source.
+	switch cfg.XrayConfigSource.Type {
+	case "directory":
 		path := configDir
-		if cfg.XrayConfigSource != nil && cfg.XrayConfigSource.Path != "" {
+		if cfg.XrayConfigSource.Path != "" {
 			path = cfg.XrayConfigSource.Path
 		}
 		return xraycfg.Directory{Path: path}, directoryPolicy(), nil
+	case "remnawave":
+		src, err := remnawave.New(cfg.XrayConfigSource.URL, cfg.XrayConfigSource.Interval)
+		if err != nil {
+			return nil, sourcePolicy{}, err
+		}
+		return src, remnawavePolicy(), nil
+	default:
+		return nil, sourcePolicy{}, errors.New("xray_config_source: type must be directory or remnawave")
 	}
+}
 
-	src, err := remnawave.New(cfg.XrayConfigSource.URL, cfg.XrayConfigSource.Interval)
-	if err != nil {
-		return nil, sourcePolicy{}, err
+// sourceHost returns the host of a source that names one; a directory source
+// has no remote host to log.
+func sourceHost(src xraycfg.Source) string {
+	if named, ok := src.(interface{ Host() string }); ok {
+		return named.Host()
 	}
-	return src, remnawavePolicy(), nil
+	return ""
 }
 
 // directoryPolicy is hand-written configs: a broken deployment at startup, and a
@@ -85,7 +103,13 @@ func (a *application) initialConfigs(ctx context.Context) ([]xraycfg.Config, err
 	// strictStartup is only set for a directory source, where an empty
 	// directory is a broken deployment rather than an empty set.
 	if len(cfgs) == 0 && a.policy.strictStartup {
-		return nil, fmt.Errorf("%s: no configs: %w", a.source.(xraycfg.Directory).Path, xraycfg.ErrNoConfigs)
+		// A directory source's own path is the one the operator configured; any
+		// other strict source still names where configs were expected.
+		path := a.env.ConfigDir
+		if dir, ok := a.source.(xraycfg.Directory); ok {
+			path = dir.Path
+		}
+		return nil, fmt.Errorf("%s: no configs: %w", path, xraycfg.ErrNoConfigs)
 	}
 	return cfgs, nil
 }

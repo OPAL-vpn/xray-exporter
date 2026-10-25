@@ -27,8 +27,15 @@ func (a *application) reload(ctx context.Context) {
 
 	// A reload always restarts the measurement, even when it rejects an input:
 	// interrupting the cycle must not leave the exporter unmeasured until the
-	// next tick.
-	defer a.startCycle(ctx, a.env.Interval/2)
+	// next tick. A fetch that failed closed is the exception: that state starts
+	// no cycle until a fetch succeeds again.
+	failedClosed := false
+	defer func() {
+		if failedClosed || ctx.Err() != nil {
+			return
+		}
+		a.startCycle(ctx, a.env.Interval/2)
+	}()
 
 	a.interruptCycle()
 
@@ -76,12 +83,14 @@ func (a *application) reload(ctx context.Context) {
 		a.snap.IncReloadError()
 		if a.policy.failClosed {
 			a.failClosed(now, err)
+			failedClosed = true
 			return
 		}
 		a.logger.Error("reload: config fetch failed, keeping previous", "error", err)
 		if restartedAll {
 			// The kept configs still carry the DNS upstream and the manager is new,
 			// so start them rather than leave the exporter with no instances.
+			a.interruptCycle()
 			a.apply(a.configs)
 			a.seed(now)
 		}
@@ -92,6 +101,10 @@ func (a *application) reload(ctx context.Context) {
 		// A readable but empty set is authoritative: every config left.
 		a.logger.Info("reload: config source empty, stopping every config")
 	}
+	// The fetch can take up to its own timeout, so a ticker-started cycle may
+	// have begun while the instances were replaced; interrupt it before applying
+	// so a reload still leaves no cycle measuring the old set.
+	a.interruptCycle()
 	_, applied := a.applySet(fetched, now)
 	a.logger.Info("configuration reloaded", "configs", len(fetched), "applied", applied)
 }
