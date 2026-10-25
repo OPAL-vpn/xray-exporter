@@ -44,7 +44,7 @@ in a series that was silently missing is PATCH.
 
 ## Before 1.0.0
 
-The project is at `v0.1.0`. SemVer §4 applies: in `0.y.z` anything may change
+The project is at `v0.4.0`. SemVer §4 applies: in `0.y.z` anything may change
 and a MINOR bump may carry a breaking change. Here that means a `0.y.0` may
 rename a metric, a label or an env var, and the tag annotation says what broke.
 

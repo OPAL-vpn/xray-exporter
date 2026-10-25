@@ -37,12 +37,12 @@ at least one config JSON is in `xray/` — or, with a
 from the directory holding `xray/` and `xray-exporter-config.yml`:
 
 ```sh
-docker pull ghcr.io/opal-vpn/xray-exporter:v0.1.0
+docker pull ghcr.io/opal-vpn/xray-exporter:v0.4.0
 docker run --rm \
   -p 9787:9787 \
   -v "$PWD/xray:/config/xray:ro" \
   -v "$PWD/xray-exporter-config.yml:/config/xray-exporter-config.yml:ro" \
-  ghcr.io/opal-vpn/xray-exporter:v0.1.0
+  ghcr.io/opal-vpn/xray-exporter:v0.4.0
 ```
 
 Releases are multi-arch (`linux/amd64`, `linux/arm64`); `latest` follows the
