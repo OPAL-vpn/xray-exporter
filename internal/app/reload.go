@@ -117,6 +117,8 @@ func (a *application) applyInputs(exporterConfig *config.ExporterConfig, upstrea
 	restartedAll := upstream != a.upstream
 	a.upstream = upstream
 	a.exporterConfig = exporterConfig
+	a.snap.SetVantage(vantageSpec(exporterConfig))
+	a.wakeVantage()
 	var previous *xrayproc.Manager
 	if restartedAll {
 		previous = a.manager

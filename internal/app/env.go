@@ -17,6 +17,7 @@ type Env struct {
 	Workers          int
 	ProbeTimeout     time.Duration
 	ResolverTimeout  time.Duration
+	ControlTimeout   time.Duration
 	XrayLogLevel     string
 	XrayLogFile      string
 	XrayLogMaxBytes  int64
@@ -44,6 +45,9 @@ func LoadEnv(getenv func(string) string) (Env, error) {
 		return Env{}, err
 	}
 	if env.ResolverTimeout, err = duration(getenv, "RESOLVER_TIMEOUT", 5*time.Second); err != nil {
+		return Env{}, err
+	}
+	if env.ControlTimeout, err = duration(getenv, "CONTROL_TIMEOUT", 5*time.Second); err != nil {
 		return Env{}, err
 	}
 	if env.XrayLogMaxBytes, err = byteCount(getenv, "XRAY_LOG_MAX_BYTES", 1<<30); err != nil {

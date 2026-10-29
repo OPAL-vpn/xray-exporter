@@ -17,6 +17,9 @@ func (a *application) once(ctx context.Context) error {
 		deadline = DefaultDeadline
 	}
 
+	if a.vantageConfig() != nil {
+		a.lookupVantage(ctx, newLookuper())
+	}
 	a.cycle(ctx, deadline)
 
 	if err := a.writeReport(); err != nil {

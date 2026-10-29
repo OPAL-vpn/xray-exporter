@@ -83,6 +83,13 @@ type application struct {
 	configs []xraycfg.Config
 	seeded  map[string]struct{}
 
+	// entryAddrs maps a config to its entry host:port, read by the cycle while
+	// a refresh replaces it; entryMu guards it.
+	entryMu    sync.RWMutex
+	entryAddrs map[string]string
+	// vantageWake interrupts the lookup loop's wait; buffered 1.
+	vantageWake chan struct{}
+
 	// refreshMu serializes refreshes, which interrupt and restart the cycle.
 	refreshMu sync.Mutex
 	// refreshWake interrupts a parked refresh loop; buffered 1 so a wake-up is
@@ -130,7 +137,9 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 		sourceConfig:   exporterConfig.XrayConfigSource,
 		seeded:         make(map[string]struct{}),
 		refreshWake:    make(chan struct{}, 1),
+		vantageWake:    make(chan struct{}, 1),
 	}
+	a.snap.SetVantage(vantageSpec(exporterConfig))
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
 	a.snap.SetSource(source.Kind())

@@ -39,6 +39,7 @@ func (a *application) serve(ctx context.Context) error {
 
 	// Refresh on the source's own interval; SIGHUP reloads the inputs instead.
 	go a.refreshLoop(runCtx)
+	go a.vantageLoop(runCtx)
 
 	// Measure at startup so the first scrape does not wait an interval.
 	a.startCycle(runCtx, a.env.Interval/2)

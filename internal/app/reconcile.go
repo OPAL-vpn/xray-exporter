@@ -46,6 +46,7 @@ func (a *application) declared() (hosts []string, resolvers []config.Resolver) {
 // running=0, and configs removed from the set lose their series.
 func (a *application) seed(now time.Time) {
 	hosts, resolvers := a.declared()
+	a.recordEntries(a.configs)
 
 	running := make(map[string]string, len(a.configs))
 	for _, inst := range a.instances() {
