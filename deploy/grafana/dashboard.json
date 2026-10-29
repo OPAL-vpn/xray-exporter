@@ -39,7 +39,7 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [],
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -101,7 +101,7 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [],
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -177,7 +177,7 @@
           },
           "mappings": [],
           "min": 0,
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -235,6 +235,235 @@
         "y": 7
       },
       "panels": [],
+      "title": "Vantage",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "xray_vantage_info{instance=~\"$instance\"}",
+          "refId": "A",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Network (ipinfo.io)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "job": true
+            }
+          }
+        }
+      ],
+      "type": "table",
+      "description": "Latency columns stay empty until the first successful measurement."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Up"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "xray_control_up{instance=~\"$instance\"}",
+          "refId": "A",
+          "legendFormat": "{{instance}} {{class}}/{{kind}}/{{name}}"
+        }
+      ],
+      "title": "Direct controls (no tunnel)",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Up"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "xray_entry_tcp_up{instance=~\"$instance\",config=~\"$config\"}",
+          "refId": "A",
+          "legendFormat": "{{instance}} {{config}}"
+        }
+      ],
+      "title": "Entry TCP per config (no tunnel)",
+      "type": "state-timeline"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "panels": [],
       "title": "Targets",
       "type": "row"
     },
@@ -269,7 +498,7 @@
               "type": "value"
             }
           ],
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -287,7 +516,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "options": {
         "legend": {
@@ -327,7 +556,7 @@
             }
           },
           "mappings": [],
-          "noValue": "\u2014"
+          "noValue": "—"
         },
         "overrides": [
           {
@@ -408,7 +637,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 22
       },
       "options": {
         "cellHeight": "sm",
@@ -523,7 +752,7 @@
           },
           "mappings": [],
           "min": 0,
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -541,7 +770,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "options": {
         "legend": {
@@ -590,7 +819,7 @@
           },
           "mappings": [],
           "min": 0,
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -608,7 +837,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 22
+        "y": 30
       },
       "options": {
         "legend": {
@@ -657,7 +886,7 @@
           },
           "mappings": [],
           "min": 0,
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -675,7 +904,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 22
+        "y": 30
       },
       "options": {
         "legend": {
@@ -722,7 +951,7 @@
             "lineWidth": 0
           },
           "mappings": [],
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -752,7 +981,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 29
+        "y": 37
       },
       "options": {
         "legend": {
@@ -810,7 +1039,7 @@
               "type": "value"
             }
           ],
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -828,7 +1057,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 29
+        "y": 37
       },
       "options": {
         "legend": {
@@ -860,7 +1089,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 43
       },
       "panels": [],
       "title": "Resolvers",
@@ -897,7 +1126,7 @@
               "type": "value"
             }
           ],
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -915,7 +1144,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 36
+        "y": 44
       },
       "options": {
         "legend": {
@@ -958,7 +1187,7 @@
           },
           "mappings": [],
           "min": 0,
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -976,7 +1205,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 36
+        "y": 44
       },
       "options": {
         "legend": {
@@ -1014,7 +1243,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 51
       },
       "panels": [],
       "title": "Config",
@@ -1034,7 +1263,7 @@
             }
           },
           "mappings": [],
-          "noValue": "\u2014"
+          "noValue": "—"
         },
         "overrides": [
           {
@@ -1059,7 +1288,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 52
       },
       "options": {
         "cellHeight": "sm",
@@ -1150,7 +1379,7 @@
           },
           "mappings": [],
           "min": 0,
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1168,7 +1397,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 60
       },
       "options": {
         "legend": {
