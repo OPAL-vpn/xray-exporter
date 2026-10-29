@@ -30,6 +30,9 @@ type Snapshot struct {
 	hasFetch    bool
 	source      string
 
+	// vantage is nil unless the config declares a vantage block.
+	vantage *vantageState
+
 	collector prometheus.Collector
 }
 
