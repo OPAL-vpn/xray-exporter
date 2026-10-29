@@ -15,6 +15,10 @@ const dashboardPath = "../../deploy/grafana/dashboard.json"
 
 var dashboardMetricRef = regexp.MustCompile(`\b(xray_[a-z0-9_]+)\b`)
 
+// dashboardGrouping matches a by/without clause, whose names are labels such as
+// xray_version, not metrics.
+var dashboardGrouping = regexp.MustCompile(`\b(?:by|without)\s*\([^)]*\)`)
+
 // dashboardPromQLKeys hold PromQL strings; a metric rename can drift in any.
 var dashboardPromQLKeys = []string{"definition", "expr", "query"}
 
@@ -155,6 +159,7 @@ func unknownDashboardMetrics(exprs []string) []string {
 
 	var unknown []string
 	for _, expr := range exprs {
+		expr = dashboardGrouping.ReplaceAllString(expr, "")
 		for _, match := range dashboardMetricRef.FindAllStringSubmatch(expr, -1) {
 			name := match[1]
 			if _, ok := known[name]; ok || slices.Contains(unknown, name) {

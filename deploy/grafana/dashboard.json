@@ -12,6 +12,24 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 152, 48, 1)",
+        "name": "Xray config set changes",
+        "tagKeys": "instance",
+        "target": {
+          "expr": "changes(xray_exporter_config_reload_total{job=\"xray-exporter\", instance=~\"$instance\"}[4m]) > 0",
+          "interval": "60s",
+          "refId": "Anno"
+        },
+        "textFormat": "",
+        "titleFormat": "{{instance}}: config set applied"
       }
     ]
   },
@@ -100,73 +118,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "mappings": [],
-          "noValue": "—",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 900
-              },
-              {
-                "color": "red",
-                "value": 1800
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "time() - max by (instance, config) (xray_cycle_timestamp_seconds{instance=~\"$instance\",config=~\"$config\"})",
-          "refId": "A",
-          "legendFormat": "{{instance}} {{config}}",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "title": "Cycle age",
-      "type": "stat",
-      "description": "Seconds since the last cycle finished; no value until the first cycle completes."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
           "custom": {
             "axisPlacement": "auto",
             "drawStyle": "line",
@@ -192,10 +143,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 16,
-        "x": 8,
-        "y": 1
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 7
       },
       "options": {
         "legend": {
@@ -232,7 +183,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 25
       },
       "panels": [],
       "title": "Reachability",
@@ -260,7 +211,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 8
+        "y": 26
       },
       "options": {
         "cellHeight": "sm",
@@ -341,7 +292,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 8
+        "y": 26
       },
       "options": {
         "legend": {
@@ -409,7 +360,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 8
+        "y": 26
       },
       "options": {
         "legend": {
@@ -494,7 +445,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 32
       },
       "options": {
         "legend": {
@@ -574,7 +525,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 32
       },
       "options": {
         "legend": {
@@ -607,7 +558,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 40
       },
       "panels": [],
       "title": "Targets",
@@ -618,61 +569,116 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "Targets that answered their last probe, per vantage point and config. up/total is the latest cycle; green at 95% or more, yellow from 80% to 95%, red below 80%.",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "custom": {
-            "fillOpacity": 70,
-            "lineWidth": 0
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "Down"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Up"
-                }
-              },
-              "type": "value"
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
             }
-          ],
+          },
+          "mappings": [],
           "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
               }
             ]
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "up"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 6,
+        "h": 18,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 41
       },
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "mergeValues": true,
-        "rowHeight": 0.9,
-        "showValue": "auto"
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "success %",
+            "desc": false
+          }
+        ]
       },
       "targets": [
         {
@@ -680,19 +686,65 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
+          "expr": "sum by (instance, config) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
           "refId": "A",
-          "legendFormat": "{{instance}} {{config}} {{target}}"
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count by (instance, config) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum by (instance, config) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}) / count by (instance, config) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "format": "table"
         }
       ],
-      "title": "Target status",
-      "type": "state-timeline"
+      "title": "Target success",
+      "type": "table",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true
+            },
+            "renameByName": {
+              "Value #A": "up",
+              "Value #B": "total",
+              "Value #C": "success %"
+            }
+          }
+        }
+      ]
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "Targets whose last probe got no HTTP response, with the last status and attempt time. No rows means every selected target answered.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -720,54 +772,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "TTFB (s)"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 3
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total (s)"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 3
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "DNS (s)"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 3
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "last attempt"
             },
             "properties": [
@@ -783,7 +787,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 59
       },
       "options": {
         "cellHeight": "sm",
@@ -795,7 +799,13 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "instance",
+            "desc": false
+          }
+        ]
       },
       "targets": [
         {
@@ -803,7 +813,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_probe_http_status{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
+          "expr": "max by (instance, config, target) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}) == 0",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -814,7 +824,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_probe_ttfb_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
+          "expr": "max by (instance, config, target) (xray_probe_http_status{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}) and on (instance, config, target) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"} == 0)",
           "refId": "B",
           "instant": true,
           "range": false,
@@ -825,36 +835,15 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_probe_total_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
+          "expr": "max by (instance, config, target) (xray_target_timestamp_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}) * 1000 and on (instance, config, target) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"} == 0)",
           "refId": "C",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "xray_dns_lookup_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
-          "refId": "D",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "xray_target_timestamp_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
-          "refId": "E",
           "instant": true,
           "range": false,
           "format": "table"
         }
       ],
-      "title": "Latest per target",
+      "title": "Failing targets",
+      "type": "table",
       "transformations": [
         {
           "id": "merge",
@@ -866,20 +855,16 @@
             "excludeByName": {
               "Time": true,
               "__name__": true,
-              "job": true
+              "job": true,
+              "Value #A": true
             },
             "renameByName": {
-              "Value #A": "HTTP status",
-              "Value #B": "TTFB (s)",
-              "Value #C": "total (s)",
-              "Value #D": "DNS (s)",
-              "Value #E": "last attempt"
+              "Value #B": "HTTP status",
+              "Value #C": "last attempt"
             }
           }
         }
-      ],
-      "type": "table",
-      "description": "Latency columns stay empty until the first successful measurement."
+      ]
     },
     {
       "datasource": {
@@ -913,10 +898,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 21,
         "w": 8,
         "x": 0,
-        "y": 37
+        "y": 67
       },
       "options": {
         "legend": {
@@ -941,7 +926,7 @@
           },
           "expr": "xray_probe_ttfb_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
           "refId": "A",
-          "legendFormat": "{{target}}"
+          "legendFormat": "{{instance}} {{config}} {{target}}"
         }
       ],
       "title": "TTFB",
@@ -980,10 +965,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 21,
         "w": 8,
         "x": 8,
-        "y": 37
+        "y": 67
       },
       "options": {
         "legend": {
@@ -1008,7 +993,7 @@
           },
           "expr": "xray_probe_total_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
           "refId": "A",
-          "legendFormat": "{{target}}"
+          "legendFormat": "{{instance}} {{config}} {{target}}"
         }
       ],
       "title": "Total request time",
@@ -1047,10 +1032,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 21,
         "w": 8,
         "x": 16,
-        "y": 37
+        "y": 67
       },
       "options": {
         "legend": {
@@ -1075,7 +1060,7 @@
           },
           "expr": "xray_dns_lookup_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
           "refId": "A",
-          "legendFormat": "{{target}}"
+          "legendFormat": "{{instance}} {{config}} {{target}}"
         }
       ],
       "title": "Tunnel DNS lookup",
@@ -1083,159 +1068,12 @@
       "description": "Absent until the first successful DNS response."
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "fillOpacity": 70,
-            "lineWidth": 0
-          },
-          "mappings": [],
-          "noValue": "—",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 300
-              },
-              {
-                "color": "orange",
-                "value": 400
-              },
-              {
-                "color": "red",
-                "value": 500
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 44
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "mergeValues": true,
-        "rowHeight": 0.9,
-        "showValue": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "xray_probe_http_status{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
-          "refId": "A",
-          "legendFormat": "{{instance}} {{config}} {{target}}"
-        }
-      ],
-      "title": "HTTP status",
-      "type": "state-timeline",
-      "description": "2xx green, 3xx yellow, 4xx orange, 5xx red; 0 means no response."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "fillOpacity": 70,
-            "lineWidth": 0
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "Invalid"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Valid"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "noValue": "—",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 44
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "mergeValues": true,
-        "rowHeight": 0.9,
-        "showValue": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "xray_probe_tls_ok{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
-          "refId": "A",
-          "legendFormat": "{{instance}} {{config}} {{target}}"
-        }
-      ],
-      "title": "TLS verified",
-      "type": "state-timeline"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 88
       },
       "panels": [],
       "title": "Resolvers",
@@ -1246,61 +1084,116 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "Resolvers that answered their last probe, per vantage point and config. up/total is the latest cycle; green at 95% or more, yellow from 80% to 95%, red below. With three resolvers, 2/3 (67%) is already red.",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "custom": {
-            "fillOpacity": 70,
-            "lineWidth": 0
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "Down"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Up"
-                }
-              },
-              "type": "value"
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
             }
-          ],
+          },
+          "mappings": [],
           "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
               }
             ]
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "up"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 7,
+        "h": 15,
         "w": 12,
         "x": 0,
-        "y": 51
+        "y": 89
       },
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "mergeValues": true,
-        "rowHeight": 0.9,
-        "showValue": "auto"
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "success %",
+            "desc": false
+          }
+        ]
       },
       "targets": [
         {
@@ -1308,13 +1201,131 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_resolver_up{instance=~\"$instance\",config=~\"$config\"}",
+          "expr": "sum by (instance, config) (xray_resolver_up{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "A",
-          "legendFormat": "{{resolver}} {{transport}}"
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count by (instance, config) (xray_resolver_up{instance=~\"$instance\",config=~\"$config\"})",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum by (instance, config) (xray_resolver_up{instance=~\"$instance\",config=~\"$config\"}) / count by (instance, config) (xray_resolver_up{instance=~\"$instance\",config=~\"$config\"})",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "format": "table"
         }
       ],
-      "title": "Resolver availability",
-      "type": "state-timeline"
+      "title": "Resolver success",
+      "type": "table",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true
+            },
+            "renameByName": {
+              "Value #A": "up",
+              "Value #B": "total",
+              "Value #C": "success %"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Resolvers whose last probe failed. No rows means every selected config reached every resolver.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 104
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "instance",
+            "desc": false
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (instance, config, resolver, transport) (xray_resolver_up{instance=~\"$instance\",config=~\"$config\"}) == 0",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "title": "Failing resolvers",
+      "type": "table",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "Value": true,
+              "Value #A": true
+            }
+          }
+        }
+      ]
     },
     {
       "datasource": {
@@ -1348,10 +1359,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 21,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 89
       },
       "options": {
         "legend": {
@@ -1389,7 +1400,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 110
       },
       "panels": [],
       "title": "Config",
@@ -1434,7 +1445,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 111
       },
       "options": {
         "cellHeight": "sm",
@@ -1454,7 +1465,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_config_running{instance=~\"$instance\",config=~\"$config\"}",
+          "expr": "max by (instance, config) (xray_config_running{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -1465,7 +1476,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_config_info{instance=~\"$instance\",config=~\"$config\"}",
+          "expr": "max by (instance, config, xray_version) (xray_config_info{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "B",
           "instant": true,
           "range": false,
@@ -1476,7 +1487,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_cycle_duration_seconds{instance=~\"$instance\",config=~\"$config\"}",
+          "expr": "max by (instance, config) (xray_cycle_duration_seconds{instance=~\"$instance\",config=~\"$config\"})",
           "refId": "D",
           "instant": true,
           "range": false,
@@ -1495,85 +1506,18 @@
             "excludeByName": {
               "Time": true,
               "__name__": true,
-              "job": true
+              "job": true,
+              "Value #A": true,
+              "Value #B": true
             },
             "renameByName": {
-              "Value #A": "running",
-              "Value #B": "config info",
               "Value #D": "cycle duration (s)"
             }
           }
         }
       ],
       "type": "table",
-      "description": "The xray_version label column carries the xray version of each running instance."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "mappings": [],
-          "min": 0,
-          "noValue": "—",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 67
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "rate(xray_exporter_config_reload_errors_total{instance=~\"$instance\"}[5m])",
-          "refId": "A",
-          "legendFormat": "{{instance}}"
-        }
-      ],
-      "title": "Reload errors",
-      "type": "timeseries",
-      "description": "Failed configuration reloads per second; the counter carries no config label."
+      "description": "The xray_version label column carries the running version."
     }
   ],
   "refresh": "1m",
@@ -1707,7 +1651,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "xray-exporter",
-  "uid": "xray-exporter",
+  "title": "opal-vpn xray-exporter",
+  "uid": "opal-xray-exporter",
   "version": 1
 }
