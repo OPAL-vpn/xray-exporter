@@ -22,28 +22,28 @@ func load(t *testing.T, extra string) (*ExporterConfig, error) {
 	return Load(path)
 }
 
-func TestVantageOptional(t *testing.T) {
+func TestReachabilityOptional(t *testing.T) {
 	cfg, err := load(t, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Vantage != nil {
-		t.Error("Vantage set without the block")
+	if cfg.Reachability != nil {
+		t.Error("Reachability set without the block")
 	}
 }
 
-func TestVantageEmptyBlockEnables(t *testing.T) {
-	cfg, err := load(t, "vantage: {}\n")
+func TestReachabilityEmptyBlockEnables(t *testing.T) {
+	cfg, err := load(t, "reachability: {}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Vantage == nil {
+	if cfg.Reachability == nil {
 		t.Error("an empty block must still enable the lookup")
 	}
 }
 
-func TestVantageValid(t *testing.T) {
-	cfg, err := load(t, `vantage:
+func TestReachabilityValid(t *testing.T) {
+	cfg, err := load(t, `reachability:
   controls:
     https:
       - { name: ya, host: ya.ru, class: domestic }
@@ -56,19 +56,19 @@ func TestVantageValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Vantage.EntryTCP || len(cfg.Vantage.Controls.All()) != 3 {
-		t.Errorf("entry_tcp = %v, controls = %d", cfg.Vantage.EntryTCP, len(cfg.Vantage.Controls.All()))
+	if !cfg.Reachability.EntryTCP || len(cfg.Reachability.Controls.All()) != 3 {
+		t.Errorf("entry_tcp = %v, controls = %d", cfg.Reachability.EntryTCP, len(cfg.Reachability.Controls.All()))
 	}
 }
 
-func TestVantageRejected(t *testing.T) {
-	ctl := func(body string) string { return "vantage:\n  controls:\n" + body }
+func TestReachabilityRejected(t *testing.T) {
+	ctl := func(body string) string { return "reachability:\n  controls:\n" + body }
 	tests := []struct {
 		name string
 		yaml string
 		want string
 	}{
-		{"unknown key", "vantage:\n  region: ru-moscow\n", "region"},
+		{"unknown key", "reachability:\n  region: ru-moscow\n", "region"},
 		{"bad class", ctl("    tcp:\n      - { name: a, addr: \"1.1.1.1:443\", class: abroad }\n"), "class must be"},
 		{"bad addr", ctl("    tcp:\n      - { name: a, addr: \"1.1.1.1\", class: foreign }\n"), "host:port"},
 		{"scheme in host", ctl("    https:\n      - { name: a, host: \"https://ya.ru\", class: domestic }\n"), "scheme"},

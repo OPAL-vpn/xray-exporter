@@ -166,11 +166,12 @@ func unknownDashboardMetrics(exprs []string) []string {
 	return unknown
 }
 
-// unscopedPanelExprs returns panel expressions that do not filter on $instance.
+// unscopedPanelExprs returns panel expressions that filter on neither $instance
+// nor $node, the single-node picker of the detail panels.
 func unscopedPanelExprs(exprs []string) []string {
 	var unscoped []string
 	for _, expr := range exprs {
-		if !strings.Contains(expr, "$instance") {
+		if !strings.Contains(expr, "$instance") && !strings.Contains(expr, "$node") {
 			unscoped = append(unscoped, expr)
 		}
 	}

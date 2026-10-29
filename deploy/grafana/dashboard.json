@@ -235,7 +235,7 @@
         "y": 7
       },
       "panels": [],
-      "title": "Vantage",
+      "title": "Reachability",
       "type": "row"
     },
     {
@@ -257,7 +257,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 6,
         "w": 8,
         "x": 0,
         "y": 8
@@ -280,7 +280,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_vantage_info{instance=~\"$instance\"}",
+          "expr": "xray_network_info{instance=~\"$instance\"}",
           "refId": "A",
           "legendFormat": "",
           "format": "table",
@@ -303,7 +303,7 @@
         }
       ],
       "type": "table",
-      "description": "Latency columns stay empty until the first successful measurement."
+      "description": "The network each node egresses from, as ipinfo.io reports it. A third party's best guess."
     },
     {
       "datasource": {
@@ -312,63 +312,51 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "custom": {
-            "fillOpacity": 70,
-            "lineWidth": 0
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
           },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "Down"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Up"
-                }
-              },
-              "type": "value"
-            }
-          ],
+          "mappings": [],
+          "min": 0,
           "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "text",
                 "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
               }
             ]
           },
-          "unit": "short"
+          "unit": "percentunit",
+          "max": 1
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 6,
         "w": 8,
         "x": 8,
         "y": 8
       },
       "options": {
         "legend": {
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "mergeValues": true,
-        "rowHeight": 0.9,
-        "showValue": "auto"
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -376,13 +364,82 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_control_up{instance=~\"$instance\"}",
+          "expr": "avg by (instance) (xray_control_up{instance=~\"$instance\"})",
           "refId": "A",
-          "legendFormat": "{{instance}} {{class}}/{{kind}}/{{name}}"
+          "legendFormat": "{{instance}}"
         }
       ],
-      "title": "Direct controls (no tunnel)",
-      "type": "state-timeline"
+      "title": "Direct controls: share up per node",
+      "type": "timeseries",
+      "description": "One line per node: the share of its direct probes (ya.ru, google.com, TCP, DNS) that answer, outside any tunnel. A drop means the node's own network is degraded or filtering; pick the node below for the detail."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance) (xray_entry_tcp_up{instance=~\"$instance\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "title": "Entry TCP: share of configs reachable per node",
+      "type": "timeseries",
+      "description": "One line per node: the share of configs whose server address accepts a plain TCP connection from the node, with no xray in between. Low here means the address or port is blocked from that node; high here with a failing tunnel means the protocol is blocked."
     },
     {
       "datasource": {
@@ -434,10 +491,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 8
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
       },
       "options": {
         "legend": {
@@ -455,13 +512,94 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_entry_tcp_up{instance=~\"$instance\",config=~\"$config\"}",
+          "expr": "xray_control_up{instance=\"$node\"}",
           "refId": "A",
-          "legendFormat": "{{instance}} {{config}}"
+          "legendFormat": "{{class}}/{{kind}}/{{name}}"
         }
       ],
-      "title": "Entry TCP per config (no tunnel)",
-      "type": "state-timeline"
+      "title": "Direct controls: details for $node",
+      "type": "state-timeline",
+      "description": "Each direct probe of the node picked in the Node variable. Class is domestic or foreign: domestic up with foreign down looks like a whitelist regime, everything down is a dead line."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Up"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "xray_entry_tcp_up{instance=\"$node\"}",
+          "refId": "A",
+          "legendFormat": "{{config}}"
+        }
+      ],
+      "title": "Entry TCP: details for $node",
+      "type": "state-timeline",
+      "description": "A direct TCP connect from the picked node to each config's server address, with no xray in between. It separates a blocked address or port (down) from a blocked protocol (up while the tunnel probe fails)."
     },
     {
       "collapsed": false,
@@ -469,7 +607,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 22
       },
       "panels": [],
       "title": "Targets",
@@ -524,7 +662,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 23
       },
       "options": {
         "legend": {
@@ -645,7 +783,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 29
       },
       "options": {
         "cellHeight": "sm",
@@ -778,7 +916,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 30
+        "y": 37
       },
       "options": {
         "legend": {
@@ -845,7 +983,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 30
+        "y": 37
       },
       "options": {
         "legend": {
@@ -912,7 +1050,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 30
+        "y": 37
       },
       "options": {
         "legend": {
@@ -989,7 +1127,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 44
       },
       "options": {
         "legend": {
@@ -1065,7 +1203,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 44
       },
       "options": {
         "legend": {
@@ -1097,7 +1235,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 50
       },
       "panels": [],
       "title": "Resolvers",
@@ -1152,7 +1290,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 44
+        "y": 51
       },
       "options": {
         "legend": {
@@ -1213,7 +1351,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 44
+        "y": 51
       },
       "options": {
         "legend": {
@@ -1251,7 +1389,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 58
       },
       "panels": [],
       "title": "Config",
@@ -1296,7 +1434,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 59
       },
       "options": {
         "cellHeight": "sm",
@@ -1405,7 +1543,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 67
       },
       "options": {
         "legend": {
@@ -1535,6 +1673,27 @@
         "options": [],
         "query": "label_values(xray_probe_up{instance=~\"$instance\",config=~\"$config\"}, target)",
         "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(xray_control_up, instance)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Node",
+        "multi": false,
+        "name": "node",
+        "options": [],
+        "query": "label_values(xray_control_up, instance)",
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,

@@ -81,7 +81,7 @@ sets.
 | `WORKERS` | `8` | concurrent probes per config |
 | `PROBE_TIMEOUT` | `10s` | per HTTP/DNS probe |
 | `RESOLVER_TIMEOUT` | `5s` | per DoH/DoT probe |
-| `CONTROL_TIMEOUT` | `5s` | per direct [vantage](#vantage) probe |
+| `CONTROL_TIMEOUT` | `5s` | per direct [reachability](#reachability) probe |
 | `XRAY_LOG_LEVEL` | `warning` | xray's own verbosity |
 | `XRAY_LOCATION_ASSET` | `/usr/local/share/xray` | geo asset directory |
 | `XRAY_LOG_FILE` | unset | mirror xray's stream into one file |
@@ -239,7 +239,7 @@ self-labelling.
 | `xray_exporter_config_fetch_timestamp_seconds` | — | last successful fetch; absent until then |
 | `xray_exporter_config_source_info` | type | 1, the configured source |
 | `xray_build_info` | version, go_version | 1 |
-| `xray_vantage_info` | as_name, country | 1, the network the host egresses from (ipinfo.io); [Vantage](#vantage) only |
+| `xray_network_info` | as_name, country | 1, the network the host egresses from (ipinfo.io); [Reachability](#reachability) only |
 | `xray_control_up` | kind, name, class | direct probe succeeded |
 | `xray_control_seconds` | kind, name, class | last successful round trip |
 | `xray_entry_tcp_up` | config | direct connect to the config's entry succeeded |
@@ -283,19 +283,17 @@ A fetch outage also blanks the fleet: every known config sits at
 `xray_config_running` 0 while the timestamp ages. An empty subscription is the
 opposite pair — a fresh timestamp and no config series at all.
 
-## Vantage
+## Reachability
 
-A *vantage point* is the place a measurement is taken from: here, the host the
-exporter runs on. Blocking differs by region, access type and operator, so a
-failing tunnel means different things on a home line, on a SIM and in a
-datacenter. The optional `vantage` block records which network the host is on
-and adds probes that run **outside any tunnel**, so a failing tunnel can be
-told apart from a failing network. Without the block the exporter sends none
-of this traffic; an empty block (`vantage: {}`) turns on the network lookup
-alone.
+Blocking differs by region, access type and operator, so a failing tunnel means
+different things on a home line, on a SIM and in a datacenter. The optional
+`reachability` block records which network the host is on and adds probes that
+run **outside any tunnel**, so a failing tunnel can be told apart from a failing
+network. Without the block the exporter sends none of this traffic; an empty
+block (`reachability: {}`) turns on the network lookup alone.
 
 ```yaml
-vantage:
+reachability:
   controls:                      # direct probes, once per INTERVAL
     https:
       - { name: ya,     host: ya.ru,      class: domestic }
@@ -308,12 +306,12 @@ vantage:
 ```
 
 **The network** is looked up once an hour (and on `SIGHUP`) at `ipinfo.io` and
-exported as `xray_vantage_info{as_name, country}`. Nothing is declared by hand.
+exported as `xray_network_info{as_name, country}`. Nothing is declared by hand.
 It is a third party's best guess, shown and never acted on; a failed lookup
 keeps the last good answer and logs a warning. Tag any probe with it:
 
 ```promql
-xray_probe_up * on(instance) group_left(as_name, country) xray_vantage_info
+xray_probe_up * on(instance) group_left(as_name, country) xray_network_info
 ```
 
 **Controls** answer "what is this network doing": `https` is a GET through the
@@ -333,7 +331,7 @@ address is never a label or a log field.
 
 The exporter sends no traffic outside a tunnel, with two exceptions: the config
 source fetch itself (see [Config sources](#config-sources)) and, only when the
-config has a `vantage` block, the [Vantage](#vantage) lookups and controls, which
+config has a `reachability` block, the [Reachability](#reachability) lookups and controls, which
 describe the host's own network and so cannot go through a tunnel. HTTP and TLS
 probes, DoH, DoT and the UDP DNS probe all reach their peers through an xray
 instance's loopback inbound, so a config's `routing` decides the path. Apart

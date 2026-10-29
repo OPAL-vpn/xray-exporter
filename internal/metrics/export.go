@@ -10,8 +10,8 @@ import (
 // Export is the snapshot as plain values, sorted for a stable report.
 type Export struct {
 	Configs []ConfigExport
-	// Vantage is nil unless the config declares a vantage block.
-	Vantage *VantageExport
+	// Reachability is nil unless the config declares a reachability block.
+	Reachability *ReachabilityExport
 }
 
 type ConfigExport struct {
@@ -57,7 +57,7 @@ func (s *Snapshot) Export() Export {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	exp := Export{Configs: make([]ConfigExport, 0, len(s.configs)), Vantage: exportVantage(s.vantage)}
+	exp := Export{Configs: make([]ConfigExport, 0, len(s.configs)), Reachability: exportReachability(s.reachability)}
 	for _, name := range sortedKeys(s.configs) {
 		exp.Configs = append(exp.Configs, exportConfig(name, s.configs[name]))
 	}

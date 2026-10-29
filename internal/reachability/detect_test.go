@@ -1,4 +1,4 @@
-package vantage
+package reachability
 
 import (
 	"context"

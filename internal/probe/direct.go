@@ -8,7 +8,7 @@ import (
 )
 
 // DirectDialer leaves through the host's own route and resolver. It is for the
-// vantage controls only: a tunnel probe must never use it.
+// reachability controls only: a tunnel probe must never use it.
 type DirectDialer struct {
 	Timeout time.Duration
 }

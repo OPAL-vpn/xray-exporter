@@ -43,12 +43,12 @@ func (c *snapshotCollector) Collect(ch chan<- prometheus.Metric) {
 
 	for _, name := range sortedKeys(s.configs) {
 		collectConfig(ch, name, s.configs[name])
-		if s.vantage != nil && s.vantage.spec.EntryTCP {
+		if s.reachability != nil && s.reachability.spec.EntryTCP {
 			collectEntry(ch, name, s.configs[name].entry)
 		}
 	}
-	if s.vantage != nil {
-		collectVantage(ch, s.vantage)
+	if s.reachability != nil {
+		collectReachability(ch, s.reachability)
 	}
 
 	if s.hasFetch {

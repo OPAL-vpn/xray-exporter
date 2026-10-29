@@ -105,7 +105,7 @@ var (
 		"Build version and Go version of the exporter.",
 		"version", "go_version")
 
-	vantageInfo = newMetricDef("vantage_info",
+	networkInfo = newMetricDef("network_info",
 		"The network the host egresses from, as ipinfo.io reports it.",
 		"as_name", "country")
 	controlUp = newMetricDef("control_up",
@@ -132,7 +132,7 @@ var allMetrics = []*metricDef{
 	reloadTotal, reloadErrors,
 	fetchTotal, fetchErrors, fetchTimestamp, sourceInfo,
 	buildInfo,
-	vantageInfo, controlUp, controlSeconds,
+	networkInfo, controlUp, controlSeconds,
 	entryTCPUp, entryTCPSeconds,
 }
 

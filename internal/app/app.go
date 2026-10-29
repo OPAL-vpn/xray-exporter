@@ -87,8 +87,8 @@ type application struct {
 	// a refresh replaces it; entryMu guards it.
 	entryMu    sync.RWMutex
 	entryAddrs map[string]string
-	// vantageWake interrupts the lookup loop's wait; buffered 1.
-	vantageWake chan struct{}
+	// reachabilityWake interrupts the lookup loop's wait; buffered 1.
+	reachabilityWake chan struct{}
 
 	// refreshMu serializes refreshes, which interrupt and restart the cycle.
 	refreshMu sync.Mutex
@@ -124,22 +124,22 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 	}
 
 	a := &application{
-		env:            env,
-		opts:           opts,
-		logger:         logger,
-		xrayLogger:     xrayLogger,
-		logFile:        logFile,
-		snap:           metrics.New(),
-		exporterConfig: exporterConfig,
-		upstream:       upstream,
-		source:         source,
-		policy:         policy,
-		sourceConfig:   exporterConfig.XrayConfigSource,
-		seeded:         make(map[string]struct{}),
-		refreshWake:    make(chan struct{}, 1),
-		vantageWake:    make(chan struct{}, 1),
+		env:              env,
+		opts:             opts,
+		logger:           logger,
+		xrayLogger:       xrayLogger,
+		logFile:          logFile,
+		snap:             metrics.New(),
+		exporterConfig:   exporterConfig,
+		upstream:         upstream,
+		source:           source,
+		policy:           policy,
+		sourceConfig:     exporterConfig.XrayConfigSource,
+		seeded:           make(map[string]struct{}),
+		refreshWake:      make(chan struct{}, 1),
+		reachabilityWake: make(chan struct{}, 1),
 	}
-	a.snap.SetVantage(vantageSpec(exporterConfig))
+	a.snap.SetReachability(reachabilitySpec(exporterConfig))
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
 	a.snap.SetSource(source.Kind())

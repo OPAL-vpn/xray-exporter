@@ -7,12 +7,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/vantage"
+	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
 )
 
-// VantageSpec declares the direct probes. Setting one switches the vantage
+// ReachabilitySpec declares the direct probes. Setting one switches the reachability
 // families on; the zero Snapshot exports none of them.
-type VantageSpec struct {
+type ReachabilitySpec struct {
 	Controls []config.Control
 	EntryTCP bool
 }
@@ -36,27 +36,27 @@ type entryState struct {
 	lookup *float64
 }
 
-type vantageState struct {
-	spec     VantageSpec
-	id       vantage.Identity
+type reachabilityState struct {
+	spec     ReachabilitySpec
+	id       reachability.Identity
 	hasID    bool
 	controls map[controlKey]*controlState
 }
 
-// SetVantage declares the direct probes, keeping the results of any control
+// SetReachability declares the direct probes, keeping the results of any control
 // that is still declared. nil switches the feature off.
-func (s *Snapshot) SetVantage(spec *VantageSpec) {
+func (s *Snapshot) SetReachability(spec *ReachabilitySpec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if spec == nil {
-		s.vantage = nil
+		s.reachability = nil
 		return
 	}
-	if s.vantage == nil {
-		s.vantage = &vantageState{controls: make(map[controlKey]*controlState)}
+	if s.reachability == nil {
+		s.reachability = &reachabilityState{controls: make(map[controlKey]*controlState)}
 	}
-	v := s.vantage
+	v := s.reachability
 	v.spec = *spec
 
 	keep := make(map[controlKey]struct{}, len(spec.Controls))
@@ -78,27 +78,27 @@ func (s *Snapshot) SetVantage(spec *VantageSpec) {
 
 // SetIdentity stores the egress network. A failed lookup stores nothing, so the
 // last good answer stays.
-func (s *Snapshot) SetIdentity(id vantage.Identity) {
+func (s *Snapshot) SetIdentity(id reachability.Identity) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.vantage == nil {
+	if s.reachability == nil {
 		return
 	}
-	s.vantage.id = id
-	s.vantage.hasID = true
+	s.reachability.id = id
+	s.reachability.hasID = true
 }
 
 // SetControl records a direct probe, keeping the last successful latency when
-// it fails. A control SetVantage did not declare is ignored.
+// it fails. A control SetReachability did not declare is ignored.
 func (s *Snapshot) SetControl(kind, name string, up bool, rtt time.Duration, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.vantage == nil {
+	if s.reachability == nil {
 		return
 	}
-	state, ok := s.vantage.controls[controlKey{kind: kind, name: name}]
+	state, ok := s.reachability.controls[controlKey{kind: kind, name: name}]
 	if !ok {
 		return
 	}
@@ -142,9 +142,9 @@ func sortedControlKeys(controls map[controlKey]*controlState) []controlKey {
 	return keys
 }
 
-func collectVantage(ch chan<- prometheus.Metric, v *vantageState) {
+func collectReachability(ch chan<- prometheus.Metric, v *reachabilityState) {
 	if v.hasID {
-		ch <- prometheus.MustNewConstMetric(vantageInfo.desc, prometheus.GaugeValue, 1, v.id.ASName, v.id.Country)
+		ch <- prometheus.MustNewConstMetric(networkInfo.desc, prometheus.GaugeValue, 1, v.id.ASName, v.id.Country)
 	}
 	for _, key := range sortedControlKeys(v.controls) {
 		state := v.controls[key]
@@ -163,10 +163,10 @@ func collectEntry(ch chan<- prometheus.Metric, name string, entry *entryState) {
 	}
 }
 
-// VantageExport is the direct probes as plain values, for the one-shot report.
-type VantageExport struct {
+// ReachabilityExport is the direct probes as plain values, for the one-shot report.
+type ReachabilityExport struct {
 	HasIdentity bool
-	Identity    vantage.Identity
+	Identity    reachability.Identity
 	Controls    []ControlExport
 }
 
@@ -175,11 +175,11 @@ type ControlExport struct {
 	Up                bool
 }
 
-func exportVantage(v *vantageState) *VantageExport {
+func exportReachability(v *reachabilityState) *ReachabilityExport {
 	if v == nil {
 		return nil
 	}
-	out := &VantageExport{HasIdentity: v.hasID, Identity: v.id}
+	out := &ReachabilityExport{HasIdentity: v.hasID, Identity: v.id}
 	for _, key := range sortedControlKeys(v.controls) {
 		state := v.controls[key]
 		out.Controls = append(out.Controls, ControlExport{Kind: key.kind, Name: key.name, Class: state.class, Up: state.up})

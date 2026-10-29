@@ -10,7 +10,7 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
-	"github.com/OPAL-vpn/xray-exporter/internal/vantage"
+	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 )
 
@@ -20,57 +20,57 @@ const lookupInterval = time.Hour
 
 // lookuper detects the egress network; tests replace it.
 type lookuper interface {
-	Lookup(ctx context.Context) (vantage.Identity, error)
+	Lookup(ctx context.Context) (reachability.Identity, error)
 }
 
 // newLookuper builds the detector; a test swaps it to avoid the network.
-var newLookuper = func() lookuper { return vantage.New() }
+var newLookuper = func() lookuper { return reachability.New() }
 
-// vantageSpec turns the block into the snapshot's view of it, or nil when the
+// reachabilitySpec turns the block into the snapshot's view of it, or nil when the
 // config has none.
-func vantageSpec(cfg *config.ExporterConfig) *metrics.VantageSpec {
-	if cfg.Vantage == nil {
+func reachabilitySpec(cfg *config.ExporterConfig) *metrics.ReachabilitySpec {
+	if cfg.Reachability == nil {
 		return nil
 	}
-	return &metrics.VantageSpec{Controls: cfg.Vantage.Controls.All(), EntryTCP: cfg.Vantage.EntryTCP}
+	return &metrics.ReachabilitySpec{Controls: cfg.Reachability.Controls.All(), EntryTCP: cfg.Reachability.EntryTCP}
 }
 
-// vantageConfig returns the current block, nil when the feature is off.
-func (a *application) vantageConfig() *config.Vantage {
+// reachabilityConfig returns the current block, nil when the feature is off.
+func (a *application) reachabilityConfig() *config.Reachability {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.exporterConfig.Vantage
+	return a.exporterConfig.Reachability
 }
 
-// wakeVantage makes the loop look up now; a full buffer drops the wake.
-func (a *application) wakeVantage() {
+// wakeReachability makes the loop look up now; a full buffer drops the wake.
+func (a *application) wakeReachability() {
 	select {
-	case a.vantageWake <- struct{}{}:
+	case a.reachabilityWake <- struct{}{}:
 	default:
 	}
 }
 
-// vantageLoop looks the egress network up at startup, on every reload and then
+// reachabilityLoop looks the egress network up at startup, on every reload and then
 // every lookupInterval. It never blocks the first probe cycle.
-func (a *application) vantageLoop(ctx context.Context) {
+func (a *application) reachabilityLoop(ctx context.Context) {
 	detector := newLookuper()
 	ticker := time.NewTicker(lookupInterval)
 	defer ticker.Stop()
 	for {
-		if a.vantageConfig() != nil {
-			a.lookupVantage(ctx, detector)
+		if a.reachabilityConfig() != nil {
+			a.lookupReachability(ctx, detector)
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-a.vantageWake:
+		case <-a.reachabilityWake:
 		case <-ticker.C:
 		}
 	}
 }
 
-// lookupVantage runs one detection. A failure keeps the last good identity.
-func (a *application) lookupVantage(ctx context.Context, detector lookuper) {
+// lookupReachability runs one detection. A failure keeps the last good identity.
+func (a *application) lookupReachability(ctx context.Context, detector lookuper) {
 	id, err := detector.Lookup(ctx)
 	if ctx.Err() != nil {
 		return
@@ -79,7 +79,7 @@ func (a *application) lookupVantage(ctx context.Context, detector lookuper) {
 		a.logger.Warn("egress lookup failed", "error", err)
 		return
 	}
-	if before := a.snap.Export().Vantage; before != nil && before.HasIdentity && before.Identity != id {
+	if before := a.snap.Export().Reachability; before != nil && before.HasIdentity && before.Identity != id {
 		a.logger.Warn("egress network changed", "as_name", id.ASName, "country", id.Country,
 			"previous_as_name", before.Identity.ASName, "previous_country", before.Identity.Country)
 	} else {
@@ -88,11 +88,11 @@ func (a *application) lookupVantage(ctx context.Context, detector lookuper) {
 	a.snap.SetIdentity(id)
 }
 
-// controls runs the direct probes of the vantage block, bounded by the worker
+// controls runs the direct probes of the reachability block, bounded by the worker
 // count. With the entry probes they are the only traffic besides the config
 // fetch and the lookup that leaves outside a tunnel.
 func (a *application) controls(ctx context.Context) {
-	v := a.vantageConfig()
+	v := a.reachabilityConfig()
 	if v == nil {
 		return
 	}
@@ -132,7 +132,7 @@ func runControl(ctx context.Context, c config.Control, timeout time.Duration) (b
 // entries connects directly to each config's entry address when the block asks
 // for it. The address never reaches a label or a log line.
 func (a *application) entries(ctx context.Context, names []string) {
-	v := a.vantageConfig()
+	v := a.reachabilityConfig()
 	if v == nil || !v.EntryTCP {
 		return
 	}

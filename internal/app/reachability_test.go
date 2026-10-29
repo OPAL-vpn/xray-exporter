@@ -14,28 +14,28 @@ import (
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
-	"github.com/OPAL-vpn/xray-exporter/internal/vantage"
+	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 )
 
 type fakeLookuper struct {
-	id  vantage.Identity
+	id  reachability.Identity
 	err error
 }
 
-func (f *fakeLookuper) Lookup(context.Context) (vantage.Identity, error) { return f.id, f.err }
+func (f *fakeLookuper) Lookup(context.Context) (reachability.Identity, error) { return f.id, f.err }
 
-// vantageApp builds the parts of application the vantage code reads.
-func vantageApp(v *config.Vantage) *application {
-	cfg := &config.ExporterConfig{Vantage: v}
+// reachabilityApp builds the parts of application the reachability code reads.
+func reachabilityApp(v *config.Reachability) *application {
+	cfg := &config.ExporterConfig{Reachability: v}
 	a := &application{
-		env:            Env{Workers: 4, ControlTimeout: 2 * time.Second},
-		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		snap:           metrics.New(),
-		exporterConfig: cfg,
-		vantageWake:    make(chan struct{}, 1),
+		env:              Env{Workers: 4, ControlTimeout: 2 * time.Second},
+		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		snap:             metrics.New(),
+		exporterConfig:   cfg,
+		reachabilityWake: make(chan struct{}, 1),
 	}
-	a.snap.SetVantage(vantageSpec(cfg))
+	a.snap.SetReachability(reachabilitySpec(cfg))
 	return a
 }
 
@@ -51,7 +51,7 @@ func TestControlsAgainstLocalPeers(t *testing.T) {
 	closedAddr := closed.Addr().String()
 	closed.Close()
 
-	a := vantageApp(&config.Vantage{Controls: config.VantageControls{
+	a := reachabilityApp(&config.Reachability{Controls: config.ReachabilityControls{
 		HTTPS: []config.HTTPControl{{Name: "local", Host: strings.TrimPrefix(https.URL, "https://"), Class: config.ClassDomestic}},
 		TCP: []config.TCPControl{
 			{Name: "open", Addr: open.Addr().String(), Class: config.ClassForeign},
@@ -62,7 +62,7 @@ func TestControlsAgainstLocalPeers(t *testing.T) {
 	a.controls(context.Background())
 
 	got := map[string]bool{}
-	for _, c := range a.snap.Export().Vantage.Controls {
+	for _, c := range a.snap.Export().Reachability.Controls {
 		got[c.Kind+"/"+c.Name] = c.Up
 	}
 	want := map[string]bool{"https/local": true, "tcp/open": true, "tcp/closed": false, "dns/localhost": true}
@@ -74,11 +74,11 @@ func TestControlsAgainstLocalPeers(t *testing.T) {
 }
 
 func TestProbesOffWithoutBlock(t *testing.T) {
-	a := vantageApp(nil)
+	a := reachabilityApp(nil)
 	a.controls(context.Background())
 	a.entries(context.Background(), []string{"nl1"})
-	if a.snap.Export().Vantage != nil {
-		t.Error("vantage exported without a block")
+	if a.snap.Export().Reachability != nil {
+		t.Error("reachability exported without a block")
 	}
 }
 
@@ -90,7 +90,7 @@ func TestEntriesProbeTheConfigsAddress(t *testing.T) {
 	defer open.Close()
 	host, port, _ := net.SplitHostPort(open.Addr().String())
 
-	a := vantageApp(&config.Vantage{EntryTCP: true})
+	a := reachabilityApp(&config.Reachability{EntryTCP: true})
 	for _, name := range []string{"up", "down", "noentry"} {
 		a.snap.Seed(name, nil, nil, time.Now())
 	}
@@ -113,31 +113,31 @@ func TestEntriesProbeTheConfigsAddress(t *testing.T) {
 }
 
 func TestLookupKeepsLastIdentityOnFailure(t *testing.T) {
-	a := vantageApp(&config.Vantage{})
+	a := reachabilityApp(&config.Reachability{})
 
-	a.lookupVantage(context.Background(), &fakeLookuper{id: vantage.Identity{ASName: "PJSC MegaFon", Country: "RU"}})
-	a.lookupVantage(context.Background(), &fakeLookuper{err: errors.New("down")})
+	a.lookupReachability(context.Background(), &fakeLookuper{id: reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"}})
+	a.lookupReachability(context.Background(), &fakeLookuper{err: errors.New("down")})
 
-	got := a.snap.Export().Vantage
+	got := a.snap.Export().Reachability
 	if !got.HasIdentity || got.Identity.ASName != "PJSC MegaFon" {
 		t.Errorf("identity = %+v, want the last good one", got)
 	}
 }
 
-func TestVantageLoopLooksUpAndStops(t *testing.T) {
+func TestReachabilityLoopLooksUpAndStops(t *testing.T) {
 	orig := newLookuper
 	defer func() { newLookuper = orig }()
 	newLookuper = func() lookuper {
-		return &fakeLookuper{id: vantage.Identity{ASName: "PJSC MegaFon", Country: "RU"}}
+		return &fakeLookuper{id: reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"}}
 	}
 
-	a := vantageApp(&config.Vantage{})
+	a := reachabilityApp(&config.Reachability{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { a.vantageLoop(ctx); close(done) }()
+	go func() { a.reachabilityLoop(ctx); close(done) }()
 
 	deadline := time.After(5 * time.Second)
-	for !a.snap.Export().Vantage.HasIdentity {
+	for !a.snap.Export().Reachability.HasIdentity {
 		select {
 		case <-deadline:
 			t.Fatal("no lookup within 5s")

@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/vantage"
+	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
 )
 
-func vantageSpec() *VantageSpec {
-	return &VantageSpec{
+func reachabilitySpec() *ReachabilitySpec {
+	return &ReachabilitySpec{
 		Controls: []config.Control{
 			{Kind: config.ControlHTTPS, Name: "ya", Class: config.ClassDomestic, Target: "ya.ru"},
 			{Kind: config.ControlTCP, Name: "cf", Class: config.ClassForeign, Target: "1.1.1.1:443"},
@@ -18,13 +18,13 @@ func vantageSpec() *VantageSpec {
 	}
 }
 
-func TestVantageOffExportsNothing(t *testing.T) {
+func TestReachabilityOffExportsNothing(t *testing.T) {
 	snap := New()
 	snap.Seed("nl1", []string{"a.test"}, nil, seedTime)
 	for _, s := range gatherSamples(t, snap) {
-		for _, prefix := range []string{"xray_vantage_", "xray_control_", "xray_entry_"} {
+		for _, prefix := range []string{"xray_network_", "xray_control_", "xray_entry_"} {
 			if len(s.name) >= len(prefix) && s.name[:len(prefix)] == prefix {
-				t.Errorf("%s emitted without a vantage block", s.name)
+				t.Errorf("%s emitted without a reachability block", s.name)
 			}
 		}
 	}
@@ -32,11 +32,11 @@ func TestVantageOffExportsNothing(t *testing.T) {
 
 func TestControlsSeededDown(t *testing.T) {
 	snap := New()
-	snap.SetVantage(vantageSpec())
+	snap.SetReachability(reachabilitySpec())
 	samples := gatherSamples(t, snap)
 
-	if n := len(samplesNamed(samples, "xray_vantage_info")); n != 0 {
-		t.Errorf("vantage_info has %d series before a lookup, want 0", n)
+	if n := len(samplesNamed(samples, "xray_network_info")); n != 0 {
+		t.Errorf("network_info has %d series before a lookup, want 0", n)
 	}
 	for _, c := range []map[string]string{
 		labels("kind", "https", "name", "ya", "class", "domestic"),
@@ -49,22 +49,22 @@ func TestControlsSeededDown(t *testing.T) {
 	}
 }
 
-func TestVantageInfoKeepsLastIdentity(t *testing.T) {
+func TestNetworkInfoKeepsLastIdentity(t *testing.T) {
 	snap := New()
-	snap.SetVantage(vantageSpec())
-	snap.SetIdentity(vantage.Identity{ASName: "PJSC MegaFon", Country: "RU"})
-	snap.SetIdentity(vantage.Identity{ASName: "MTS PJSC", Country: "RU"})
-	infos := samplesNamed(gatherSamples(t, snap), "xray_vantage_info")
+	snap.SetReachability(reachabilitySpec())
+	snap.SetIdentity(reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"})
+	snap.SetIdentity(reachability.Identity{ASName: "MTS PJSC", Country: "RU"})
+	infos := samplesNamed(gatherSamples(t, snap), "xray_network_info")
 
 	if len(infos) != 1 || infos[0].value != 1 ||
 		infos[0].labels["as_name"] != "MTS PJSC" || infos[0].labels["country"] != "RU" {
-		t.Errorf("vantage_info = %+v, want one series for the latest identity", infos)
+		t.Errorf("network_info = %+v, want one series for the latest identity", infos)
 	}
 }
 
 func TestControlKeepsLastLatencyOnFailure(t *testing.T) {
 	snap := New()
-	snap.SetVantage(vantageSpec())
+	snap.SetReachability(reachabilitySpec())
 	key := labels("kind", "tcp", "name", "cf", "class", "foreign")
 
 	snap.SetControl(config.ControlTCP, "cf", true, 30*time.Millisecond, nil)
@@ -81,30 +81,30 @@ func TestControlKeepsLastLatencyOnFailure(t *testing.T) {
 
 func TestReseedDropsRemovedControls(t *testing.T) {
 	snap := New()
-	snap.SetVantage(vantageSpec())
-	spec := vantageSpec()
+	snap.SetReachability(reachabilitySpec())
+	spec := reachabilitySpec()
 	spec.Controls = spec.Controls[:1]
-	snap.SetVantage(spec)
+	snap.SetReachability(spec)
 	samples := gatherSamples(t, snap)
 
 	mustNoSample(t, samples, "xray_control_up", labels("kind", "tcp", "name", "cf", "class", "foreign"))
 	mustSample(t, samples, "xray_control_up", labels("kind", "https", "name", "ya", "class", "domestic"))
 
-	snap.SetVantage(nil)
+	snap.SetReachability(nil)
 	if n := len(samplesNamed(gatherSamples(t, snap), "xray_control_up")); n != 0 {
 		t.Errorf("control_up has %d series after the block was removed, want 0", n)
 	}
 }
 
 func TestEntryTCPOnlyWhenEnabled(t *testing.T) {
-	spec := vantageSpec()
+	spec := reachabilitySpec()
 	snap := New()
 	snap.Seed("nl1", []string{"a.test"}, nil, seedTime)
-	snap.SetVantage(spec)
+	snap.SetReachability(spec)
 	mustNoSample(t, gatherSamples(t, snap), "xray_entry_tcp_up", labels("config", "nl1"))
 
 	spec.EntryTCP = true
-	snap.SetVantage(spec)
+	snap.SetReachability(spec)
 	samples := gatherSamples(t, snap)
 	if got := mustSample(t, samples, "xray_entry_tcp_up", labels("config", "nl1")); got != 0 {
 		t.Errorf("entry_tcp_up = %v before a probe, want 0", got)

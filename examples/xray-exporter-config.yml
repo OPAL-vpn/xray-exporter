@@ -20,8 +20,8 @@ dns_resolvers:
 #   refresh: 5m
 
 # Omit this block to send no traffic outside a tunnel. An empty block
-# (`vantage: {}`) only looks up the network the host is on.
-# vantage:
+# (`reachability: {}`) only looks up the network the host is on.
+# reachability:
 #   controls:
 #     https:
 #       - { name: ya,     host: ya.ru,      class: domestic }

@@ -44,7 +44,7 @@ type ExporterConfig struct {
 	Targets          []Target          `yaml:"targets"`
 	Resolvers        []Resolver        `yaml:"dns_resolvers"`
 	XrayConfigSource *XrayConfigSource `yaml:"xray_config_source,omitempty"`
-	Vantage          *Vantage          `yaml:"vantage,omitempty"`
+	Reachability     *Reachability     `yaml:"reachability,omitempty"`
 }
 
 func Load(path string) (*ExporterConfig, error) {
@@ -111,8 +111,8 @@ func (c *ExporterConfig) validate() error {
 	if err := validateSource(c.XrayConfigSource); err != nil {
 		return err
 	}
-	if c.Vantage != nil {
-		if err := c.Vantage.validate(); err != nil {
+	if c.Reachability != nil {
+		if err := c.Reachability.validate(); err != nil {
 			return err
 		}
 	}

@@ -20,7 +20,7 @@ const absent = "-"
 func Render(w io.Writer, exp metrics.Export) error {
 	r := &renderer{w: w}
 	r.printf("xray-exporter report %s\n", time.Now().UTC().Format(time.RFC3339))
-	renderVantage(r, exp.Vantage)
+	renderReachability(r, exp.Reachability)
 	for _, cfg := range exp.Configs {
 		renderConfig(r, cfg)
 	}
@@ -85,12 +85,12 @@ func renderConfig(r *renderer, cfg metrics.ConfigExport) {
 	})
 }
 
-// renderVantage prints the egress network and the controls.
-func renderVantage(r *renderer, v *metrics.VantageExport) {
+// renderReachability prints the egress network and the controls.
+func renderReachability(r *renderer, v *metrics.ReachabilityExport) {
 	if v == nil {
 		return
 	}
-	r.printf("\n==== vantage ====\n")
+	r.printf("\n==== reachability ====\n")
 	if v.HasIdentity {
 		r.printf("egress: %s, %s\n", orAbsent(v.Identity.ASName), orAbsent(v.Identity.Country))
 	} else {

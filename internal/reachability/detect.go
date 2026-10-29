@@ -1,5 +1,5 @@
-// Package vantage finds out which network the host egresses from.
-package vantage
+// Package reachability finds out which network the host egresses from.
+package reachability
 
 import (
 	"context"

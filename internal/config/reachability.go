@@ -25,17 +25,17 @@ const (
 
 var controlName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
-// Vantage turns on the probes that run outside any tunnel: the egress network
+// Reachability turns on the probes that run outside any tunnel: the egress network
 // lookup, the controls and, with EntryTCP, a direct connect to each config's
 // entry address. The block is optional; without it the exporter sends none of
 // that traffic.
-type Vantage struct {
-	Controls VantageControls `yaml:"controls,omitempty"`
-	EntryTCP bool            `yaml:"entry_tcp,omitempty"`
+type Reachability struct {
+	Controls ReachabilityControls `yaml:"controls,omitempty"`
+	EntryTCP bool                 `yaml:"entry_tcp,omitempty"`
 }
 
-// VantageControls are the direct probes run once per cycle.
-type VantageControls struct {
+// ReachabilityControls are the direct probes run once per cycle.
+type ReachabilityControls struct {
 	HTTPS []HTTPControl `yaml:"https,omitempty"`
 	TCP   []TCPControl  `yaml:"tcp,omitempty"`
 	DNS   []DNSControl  `yaml:"dns,omitempty"`
@@ -69,7 +69,7 @@ type Control struct {
 }
 
 // All lists every control in a stable order: https, tcp, dns, each as written.
-func (c VantageControls) All() []Control {
+func (c ReachabilityControls) All() []Control {
 	out := make([]Control, 0, len(c.HTTPS)+len(c.TCP)+len(c.DNS))
 	for _, h := range c.HTTPS {
 		out = append(out, Control{Kind: ControlHTTPS, Name: h.Name, Class: h.Class, Target: h.Host})
@@ -85,14 +85,14 @@ func (c VantageControls) All() []Control {
 
 // validate checks the controls. Every error names the block, so the message
 // points at the YAML key.
-func (v *Vantage) validate() error {
+func (v *Reachability) validate() error {
 	if err := v.validateControls(); err != nil {
-		return fmt.Errorf("vantage: controls: %w", err)
+		return fmt.Errorf("reachability: controls: %w", err)
 	}
 	return nil
 }
 
-func (v *Vantage) validateControls() error {
+func (v *Reachability) validateControls() error {
 	for i, c := range v.Controls.HTTPS {
 		host, err := normalizeHost(c.Host)
 		if err != nil {
