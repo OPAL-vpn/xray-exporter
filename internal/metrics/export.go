@@ -80,7 +80,7 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 	}
 
 	if cfg.entry != nil {
-		row.Entry = &EntryExport{Up: cfg.entry.up, Err: cfg.entry.err}
+		row.Entry = &EntryExport{Up: cfg.entry.up}
 	}
 
 	for _, target := range sortedKeys(cfg.targets) {

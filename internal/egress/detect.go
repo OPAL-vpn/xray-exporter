@@ -1,5 +1,5 @@
-// Package reachability finds out which network the host egresses from.
-package reachability
+// Package egress finds out which network the host egresses from.
+package egress
 
 import (
 	"context"

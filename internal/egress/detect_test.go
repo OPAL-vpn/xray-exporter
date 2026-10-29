@@ -1,4 +1,4 @@
-package reachability
+package egress
 
 import (
 	"context"

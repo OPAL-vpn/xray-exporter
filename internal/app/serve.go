@@ -13,6 +13,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 )
 
 // serve starts the listener, the timer and the signal loop.
@@ -39,7 +41,7 @@ func (a *application) serve(ctx context.Context) error {
 
 	// Refresh on the source's own interval; SIGHUP reloads the inputs instead.
 	go a.refreshLoop(runCtx)
-	go a.reachabilityLoop(runCtx)
+	go a.egressLoop(runCtx, egress.New())
 
 	// Measure at startup so the first scrape does not wait an interval.
 	a.startCycle(runCtx, a.env.Interval/2)

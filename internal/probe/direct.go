@@ -9,17 +9,17 @@ import (
 
 // DirectDialer leaves through the host's own route and resolver. It is for the
 // reachability controls only: a tunnel probe must never use it.
-type DirectDialer struct {
-	Timeout time.Duration
-}
+type DirectDialer struct{}
 
-// DialContext opens a connection straight from this host.
-func (d DirectDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	dialer := net.Dialer{Timeout: d.Timeout}
+// DialContext opens a connection straight from this host. The caller's context
+// bounds the dial.
+func (DirectDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	var dialer net.Dialer
 	return dialer.DialContext(ctx, network, addr)
 }
 
-// TCPResult is the outcome of one direct connect.
+// TCPResult is the outcome of one direct connect. It mirrors DNSResult, which
+// is named for the tunnel DNS probe it comes from.
 type TCPResult struct {
 	Up  bool
 	RTT time.Duration
@@ -34,7 +34,7 @@ func ProbeTCP(ctx context.Context, addr string, timeout time.Duration) TCPResult
 	defer cancel()
 
 	start := time.Now()
-	conn, err := DirectDialer{Timeout: timeout}.DialContext(ctx, "tcp", addr)
+	conn, err := DirectDialer{}.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return TCPResult{Err: err}
 	}

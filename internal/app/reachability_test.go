@@ -1,45 +1,70 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
-	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 )
 
 type fakeLookuper struct {
-	id  reachability.Identity
-	err error
+	id    egress.Identity
+	err   error
+	calls atomic.Int32
 }
 
-func (f *fakeLookuper) Lookup(context.Context) (reachability.Identity, error) { return f.id, f.err }
+func (f *fakeLookuper) Lookup(context.Context) (egress.Identity, error) {
+	f.calls.Add(1)
+	return f.id, f.err
+}
 
-// reachabilityApp builds the parts of application the reachability code reads.
-func reachabilityApp(v *config.Reachability) *application {
-	cfg := &config.ExporterConfig{Reachability: v}
+// reachabilityApp builds the parts of application the reachability code reads
+// and returns the buffer its log lines go to.
+func reachabilityApp(rc *config.Reachability) (*application, *bytes.Buffer) {
+	cfg := &config.ExporterConfig{Reachability: rc}
+	logs := &bytes.Buffer{}
 	a := &application{
-		env:              Env{Workers: 4, ControlTimeout: 2 * time.Second},
-		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		snap:             metrics.New(),
-		exporterConfig:   cfg,
-		reachabilityWake: make(chan struct{}, 1),
+		env:            Env{Workers: 4, ControlTimeout: 2 * time.Second},
+		logger:         slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		snap:           metrics.New(),
+		exporterConfig: cfg,
+		egressWake:     make(chan struct{}, 1),
 	}
 	a.snap.SetReachability(reachabilitySpec(cfg))
-	return a
+	return a, logs
 }
 
-func TestControlsAgainstLocalPeers(t *testing.T) {
+// closedAddr returns an address nothing listens on.
+func closedAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	return addr
+}
+
+func vlessConfig(addr string) []byte {
+	host, port, _ := net.SplitHostPort(addr)
+	return []byte(fmt.Sprintf(`{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":%q,"port":%s}]}}]}`, host, port))
+}
+
+func TestProbeControlsAgainstLocalPeers(t *testing.T) {
 	https := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer https.Close()
 	open, err := net.Listen("tcp", "127.0.0.1:0")
@@ -47,19 +72,16 @@ func TestControlsAgainstLocalPeers(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer open.Close()
-	closed, _ := net.Listen("tcp", "127.0.0.1:0")
-	closedAddr := closed.Addr().String()
-	closed.Close()
 
-	a := reachabilityApp(&config.Reachability{Controls: config.ReachabilityControls{
-		HTTPS: []config.HTTPControl{{Name: "local", Host: strings.TrimPrefix(https.URL, "https://"), Class: config.ClassDomestic}},
+	a, _ := reachabilityApp(&config.Reachability{Controls: config.ReachabilityControls{
+		HTTPS: []config.HostControl{{Name: "local", Host: strings.TrimPrefix(https.URL, "https://"), Class: config.ClassDomestic}},
 		TCP: []config.TCPControl{
 			{Name: "open", Addr: open.Addr().String(), Class: config.ClassForeign},
-			{Name: "closed", Addr: closedAddr, Class: config.ClassForeign},
+			{Name: "closed", Addr: closedAddr(t), Class: config.ClassForeign},
 		},
-		DNS: []config.DNSControl{{Name: "localhost", Host: "localhost", Class: config.ClassDomestic}},
+		DNS: []config.HostControl{{Name: "localhost", Host: "localhost", Class: config.ClassDomestic}},
 	}})
-	a.controls(context.Background())
+	a.probeControls(context.Background())
 
 	got := map[string]bool{}
 	for _, c := range a.snap.Export().Reachability.Controls {
@@ -73,50 +95,80 @@ func TestControlsAgainstLocalPeers(t *testing.T) {
 	}
 }
 
-func TestProbesOffWithoutBlock(t *testing.T) {
-	a := reachabilityApp(nil)
-	a.controls(context.Background())
-	a.entries(context.Background(), []string{"nl1"})
-	if a.snap.Export().Reachability != nil {
-		t.Error("reachability exported without a block")
+func TestRunControlRejectsUnknownKind(t *testing.T) {
+	if _, _, err := runControl(context.Background(), config.Control{Kind: "icmp", Name: "x"}, time.Second); err == nil {
+		t.Error("an unknown kind was probed instead of rejected")
 	}
 }
 
-func TestEntriesProbeTheConfigsAddress(t *testing.T) {
+func TestProbeEntriesUseTheConfigsAddress(t *testing.T) {
 	open, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer open.Close()
-	host, port, _ := net.SplitHostPort(open.Addr().String())
+	down := closedAddr(t)
 
-	a := reachabilityApp(&config.Reachability{EntryTCP: true})
+	a, logs := reachabilityApp(&config.Reachability{EntryTCP: true})
 	for _, name := range []string{"up", "down", "noentry"} {
 		a.snap.Seed(name, nil, nil, time.Now())
 	}
 	a.recordEntries([]xraycfg.Config{
-		{Name: "up", Raw: []byte(`{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"` + host + `","port":` + port + `}]}}]}`)},
-		{Name: "down", Raw: []byte(`{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"127.0.0.1","port":1}]}}]}`)},
+		{Name: "up", Raw: vlessConfig(open.Addr().String())},
+		{Name: "down", Raw: vlessConfig(down)},
 		{Name: "noentry", Raw: []byte(`{"outbounds":[{"protocol":"freedom"}]}`)},
 	})
-	a.entries(context.Background(), []string{"up", "down", "noentry"})
+	a.probeEntries(context.Background(), []string{"up", "down", "noentry"})
 
 	for _, c := range a.snap.Export().Configs {
-		wantUp := c.Name == "up"
-		if c.Entry == nil || c.Entry.Up != wantUp {
-			t.Errorf("entry %s = %+v, want up=%v", c.Name, c.Entry, wantUp)
+		switch c.Name {
+		case "up", "down":
+			if c.Entry == nil || c.Entry.Up != (c.Name == "up") {
+				t.Errorf("entry %s = %+v, want up=%v", c.Name, c.Entry, c.Name == "up")
+			}
+		case "noentry":
+			if c.Entry != nil {
+				t.Errorf("a config without an entry was probed: %+v", c.Entry)
+			}
 		}
-		if c.Entry != nil && c.Entry.Err != nil && strings.Contains(c.Entry.Err.Error(), "127.0.0.1") {
-			t.Errorf("entry %s error leaks the address: %v", c.Name, c.Entry.Err)
-		}
+	}
+	out := logs.String()
+	if !strings.Contains(out, "entry address unknown") || !strings.Contains(out, "entry unreachable") {
+		t.Errorf("expected the unknown-entry and unreachable warnings, got:\n%s", out)
+	}
+	if host, _, _ := net.SplitHostPort(down); strings.Contains(out, down) || strings.Contains(out, host+":") {
+		t.Errorf("a log line leaks the entry address:\n%s", out)
 	}
 }
 
-func TestLookupKeepsLastIdentityOnFailure(t *testing.T) {
-	a := reachabilityApp(&config.Reachability{})
+func TestRecordEntriesOnlyWithEntryTCP(t *testing.T) {
+	a, _ := reachabilityApp(&config.Reachability{})
+	a.recordEntries([]xraycfg.Config{{Name: "x", Raw: vlessConfig("127.0.0.1:443")}})
+	if _, ok := a.entryAddr("x"); ok {
+		t.Error("entry addresses were read although entry_tcp is off")
+	}
+}
 
-	a.lookupReachability(context.Background(), &fakeLookuper{id: reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"}})
-	a.lookupReachability(context.Background(), &fakeLookuper{err: errors.New("down")})
+func TestDialReasonDropsTheName(t *testing.T) {
+	_, err := net.DialTimeout("tcp", "no-such-host.invalid:443", 2*time.Second)
+	if err == nil {
+		t.Skip("the resolver answered for a .invalid name")
+	}
+	reason := dialReason(err)
+	if strings.Contains(reason.Error(), "no-such-host") || reason.Error() == "connect failed" {
+		t.Errorf("reason = %q, want the cause without the host name", reason)
+	}
+}
+
+func TestLookupEgressKeepsLastIdentityOnFailure(t *testing.T) {
+	a, _ := reachabilityApp(&config.Reachability{})
+
+	if !a.lookupEgress(context.Background(), &fakeLookuper{id: egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}}) {
+		t.Fatal("a good lookup reported failure")
+	}
+	if a.lookupEgress(context.Background(), &fakeLookuper{err: errors.New("down")}) {
+		t.Fatal("a failed lookup reported success")
+	}
 
 	got := a.snap.Export().Reachability
 	if !got.HasIdentity || got.Identity.ASName != "PJSC MegaFon" {
@@ -124,30 +176,33 @@ func TestLookupKeepsLastIdentityOnFailure(t *testing.T) {
 	}
 }
 
-func TestReachabilityLoopLooksUpAndStops(t *testing.T) {
-	orig := newLookuper
-	defer func() { newLookuper = orig }()
-	newLookuper = func() lookuper {
-		return &fakeLookuper{id: reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"}}
-	}
-
-	a := reachabilityApp(&config.Reachability{})
+func TestEgressLoopLooksUpOnStartAndOnWake(t *testing.T) {
+	a, _ := reachabilityApp(&config.Reachability{})
+	fake := &fakeLookuper{id: egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { a.reachabilityLoop(ctx); close(done) }()
+	go func() { a.egressLoop(ctx, fake); close(done) }()
 
-	deadline := time.After(5 * time.Second)
-	for !a.snap.Export().Reachability.HasIdentity {
-		select {
-		case <-deadline:
-			t.Fatal("no lookup within 5s")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	waitFor(t, "the startup lookup", func() bool { return fake.calls.Load() == 1 })
+	a.wakeEgress()
+	waitFor(t, "the lookup after a wake", func() bool { return fake.calls.Load() == 2 })
+
 	cancel()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("loop did not stop")
+	}
+}
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for !ok() {
+		select {
+		case <-deadline:
+			t.Fatalf("no %s within 5s", what)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }

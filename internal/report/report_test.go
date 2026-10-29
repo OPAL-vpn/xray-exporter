@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
@@ -139,5 +140,43 @@ func TestRenderFailedTarget(t *testing.T) {
 	}
 	if down[5] != "fail" {
 		t.Errorf("down.test dns cell = %q, want fail", down[5])
+	}
+}
+
+func TestRenderReachability(t *testing.T) {
+	exp := export()
+	exp.Configs[0].Entry = &metrics.EntryExport{Up: false}
+	exp.Reachability = &metrics.ReachabilityExport{
+		HasIdentity: true,
+		Identity:    egress.Identity{ASName: "PJSC MegaFon", Country: "RU"},
+		Controls: []metrics.ControlExport{
+			{Kind: "https", Name: "ya", Class: "domestic", Up: true},
+			{Kind: "tcp", Name: "cf", Class: "foreign", Up: false},
+		},
+	}
+
+	var out bytes.Buffer
+	if err := Render(&out, exp); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"egress: PJSC MegaFon, RU", "entry tcp: fail"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("report lacks %q:\n%s", want, out.String())
+		}
+	}
+	for _, row := range []string{"ya", "https", "domestic", "up"} {
+		if !strings.Contains(out.String(), row) {
+			t.Errorf("report lacks the control cell %q", row)
+		}
+	}
+
+	exp.Reachability = nil
+	exp.Configs[0].Entry = nil
+	out.Reset()
+	if err := Render(&out, exp); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "reachability") || strings.Contains(out.String(), "entry tcp") {
+		t.Errorf("a report without the block mentions it:\n%s", out.String())
 	}
 }

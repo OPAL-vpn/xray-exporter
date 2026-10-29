@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
-	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
 )
 
 func TestAllNamesCoverEverything(t *testing.T) {
@@ -33,9 +33,9 @@ func TestAllNamesCoverEverything(t *testing.T) {
 		Controls: []config.Control{{Kind: config.ControlTCP, Name: "cf", Class: config.ClassForeign, Target: "1.1.1.1:443"}},
 		EntryTCP: true,
 	})
-	snap.SetIdentity(reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"})
-	snap.SetControl(config.ControlTCP, "cf", true, time.Millisecond, nil)
-	snap.SetEntry("nl1", true, time.Millisecond, nil)
+	snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"})
+	snap.SetControl(config.ControlTCP, "cf", true, time.Millisecond)
+	snap.SetEntry("nl1", true, time.Millisecond)
 
 	samples := gatherSamples(t, snap)
 	emitted := make(map[string]struct{})

@@ -29,7 +29,9 @@ type entryOutbound struct {
 }
 
 // Entry returns host:port of the first outbound that names a server. Local
-// protocols (freedom, blackhole, dns) have none and are skipped.
+// protocols (freedom, blackhole, dns) have none and are skipped. The first one
+// is the right one because xray sends traffic through the first outbound unless
+// routing says otherwise, and the tunnel probe goes through that path.
 func Entry(raw []byte) (string, error) {
 	var doc struct {
 		Outbounds []entryOutbound `json:"outbounds"`

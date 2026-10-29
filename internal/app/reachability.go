@@ -3,31 +3,34 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
-	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
+	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 )
 
-// lookupInterval is how often the egress network is looked up. A provider
-// changes rarely, so this is a courtesy to ipinfo.io, not a tuning knob.
-const lookupInterval = time.Hour
+const (
+	// lookupInterval is how often the egress network is looked up. A provider
+	// changes rarely, so this is a courtesy to ipinfo.io, not a tuning knob.
+	lookupInterval = time.Hour
+	// lookupRetry replaces it after a failed lookup, so a transient failure at
+	// startup does not leave the network unknown for an hour.
+	lookupRetry = time.Minute
+)
 
 // lookuper detects the egress network; tests replace it.
 type lookuper interface {
-	Lookup(ctx context.Context) (reachability.Identity, error)
+	Lookup(ctx context.Context) (egress.Identity, error)
 }
 
-// newLookuper builds the detector; a test swaps it to avoid the network.
-var newLookuper = func() lookuper { return reachability.New() }
-
-// reachabilitySpec turns the block into the snapshot's view of it, or nil when the
-// config has none.
+// reachabilitySpec turns the block into the snapshot's view of it, or nil when
+// the config has none.
 func reachabilitySpec(cfg *config.ExporterConfig) *metrics.ReachabilitySpec {
 	if cfg.Reachability == nil {
 		return nil
@@ -42,181 +45,177 @@ func (a *application) reachabilityConfig() *config.Reachability {
 	return a.exporterConfig.Reachability
 }
 
-// wakeReachability makes the loop look up now; a full buffer drops the wake.
-func (a *application) wakeReachability() {
+// wakeEgress makes the loop look up now; a full buffer drops the wake.
+func (a *application) wakeEgress() {
 	select {
-	case a.reachabilityWake <- struct{}{}:
+	case a.egressWake <- struct{}{}:
 	default:
 	}
 }
 
-// reachabilityLoop looks the egress network up at startup, on every reload and then
-// every lookupInterval. It never blocks the first probe cycle.
-func (a *application) reachabilityLoop(ctx context.Context) {
-	detector := newLookuper()
-	ticker := time.NewTicker(lookupInterval)
-	defer ticker.Stop()
+// egressLoop looks the egress network up at startup, on every reload and then
+// every lookupInterval (lookupRetry after a failure). It never blocks the first
+// probe cycle.
+func (a *application) egressLoop(ctx context.Context, detector lookuper) {
 	for {
-		if a.reachabilityConfig() != nil {
-			a.lookupReachability(ctx, detector)
+		wait := lookupInterval
+		if a.reachabilityConfig() != nil && !a.lookupEgress(ctx, detector) {
+			wait = lookupRetry
 		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-a.reachabilityWake:
-		case <-ticker.C:
+		case <-a.egressWake:
+		case <-timer.C:
 		}
+		timer.Stop()
 	}
 }
 
-// lookupReachability runs one detection. A failure keeps the last good identity.
-func (a *application) lookupReachability(ctx context.Context, detector lookuper) {
+// lookupEgress runs one detection and reports whether it produced an answer. A
+// failure keeps the last good identity.
+func (a *application) lookupEgress(ctx context.Context, detector lookuper) bool {
 	id, err := detector.Lookup(ctx)
 	if ctx.Err() != nil {
-		return
+		return false
 	}
 	if err != nil {
 		a.logger.Warn("egress lookup failed", "error", err)
-		return
+		return false
 	}
-	if before := a.snap.Export().Reachability; before != nil && before.HasIdentity && before.Identity != id {
+	if previous, had := a.snap.SetIdentity(id); had && previous != id {
 		a.logger.Warn("egress network changed", "as_name", id.ASName, "country", id.Country,
-			"previous_as_name", before.Identity.ASName, "previous_country", before.Identity.Country)
+			"previous_as_name", previous.ASName, "previous_country", previous.Country)
 	} else {
 		a.logger.Info("egress network", "as_name", id.ASName, "country", id.Country)
 	}
-	a.snap.SetIdentity(id)
+	return true
 }
 
-// controls runs the direct probes of the reachability block, bounded by the worker
-// count. With the entry probes they are the only traffic besides the config
-// fetch and the lookup that leaves outside a tunnel.
-func (a *application) controls(ctx context.Context) {
-	v := a.reachabilityConfig()
-	if v == nil {
+// probeDirect runs the reachability probes beside the tunnel probes, so a slow
+// or blackholed route cannot delay them. The returned channel closes when both
+// stages are done.
+func (a *application) probeDirect(ctx context.Context, configs []string) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.probeControls(ctx)
+		a.probeEntries(ctx, configs)
+	}()
+	return done
+}
+
+// probeControls runs the block's direct probes, bounded by the worker count.
+// Like probeEntries, it sends traffic outside a tunnel.
+func (a *application) probeControls(ctx context.Context) {
+	rc := a.reachabilityConfig()
+	if rc == nil {
 		return
 	}
-	list := v.Controls.All()
+	controls := rc.Controls.All()
 	timeout := a.env.ControlTimeout
 
-	run(ctx, a.env.Workers, len(list), func(i int) {
-		c := list[i]
+	sampler.Each(ctx, a.env.Workers, len(controls), func(ctx context.Context, i int) {
+		c := controls[i]
 		up, rtt, err := runControl(ctx, c, timeout)
 		if ctx.Err() != nil {
 			return
 		}
-		a.snap.SetControl(c.Kind, c.Name, up, rtt, err)
+		a.snap.SetControl(c.Kind, c.Name, up, rtt)
 		attrs := []any{"kind", c.Kind, "control", c.Name, "class", c.Class}
 		if up {
 			a.logger.Debug("control succeeded", attrs...)
 			return
 		}
-		a.logger.Warn("control failed", append(attrs, "err", err)...)
+		a.logger.Warn("control failed", append(attrs, "error", err)...)
 	})
 }
 
-func runControl(ctx context.Context, c config.Control, timeout time.Duration) (bool, time.Duration, error) {
+func runControl(ctx context.Context, c config.Control, timeout time.Duration) (up bool, rtt time.Duration, err error) {
 	switch c.Kind {
 	case config.ControlHTTPS:
-		res := probe.ProbeHTTPS(ctx, probe.DirectDialer{Timeout: timeout}, c.Target, timeout, nil)
+		res := probe.ProbeHTTPS(ctx, probe.DirectDialer{}, c.Target, timeout, nil)
 		return res.Up, res.Total, res.Err
 	case config.ControlTCP:
 		res := probe.ProbeTCP(ctx, c.Target, timeout)
 		return res.Up, res.RTT, res.Err
-	default:
+	case config.ControlDNS:
 		res := probe.ProbeSystemDNS(ctx, c.Target, timeout)
 		return res.Up, res.RTT, res.Err
 	}
+	return false, 0, fmt.Errorf("unknown control kind %q", c.Kind)
 }
 
-// entries connects directly to each config's entry address when the block asks
-// for it. The address never reaches a label or a log line.
-func (a *application) entries(ctx context.Context, names []string) {
-	v := a.reachabilityConfig()
-	if v == nil || !v.EntryTCP {
+// probeEntries connects directly to each config's entry address when the block
+// asks for it. A config with no known entry is skipped here and was logged when
+// its address was read. The address never reaches a label or a log line.
+func (a *application) probeEntries(ctx context.Context, configs []string) {
+	rc := a.reachabilityConfig()
+	if rc == nil || !rc.EntryTCP {
 		return
 	}
 	timeout := a.env.ControlTimeout
 
-	run(ctx, a.env.Workers, len(names), func(i int) {
-		name := names[i]
-		addr, ok := a.entryFor(name)
+	sampler.Each(ctx, a.env.Workers, len(configs), func(ctx context.Context, i int) {
+		name := configs[i]
+		addr, ok := a.entryAddr(name)
 		if !ok {
-			a.snap.SetEntry(name, false, 0, xraycfg.ErrNoEntry)
-			a.logger.Warn("entry probe skipped", "config", name, "err", xraycfg.ErrNoEntry)
 			return
 		}
 		res := probe.ProbeTCP(ctx, addr, timeout)
 		if ctx.Err() != nil {
 			return
 		}
+		a.snap.SetEntry(name, res.Up, res.RTT)
 		if res.Up {
-			a.snap.SetEntry(name, true, res.RTT, nil)
 			a.logger.Debug("entry reachable", "config", name)
 			return
 		}
-		reason := dialReason(res.Err)
-		a.snap.SetEntry(name, false, 0, reason)
-		a.logger.Warn("entry unreachable", "config", name, "err", reason)
+		a.logger.Warn("entry unreachable", "config", name, "error", dialReason(res.Err))
 	})
 }
 
-// dialReason keeps the cause of a failed connect and drops the address, which
-// the error text repeats.
+// dialReason keeps the cause of a failed connect and drops the address and host
+// name, which the error text repeats.
 func dialReason(err error) error {
-	var op *net.OpError
-	if errors.As(err, &op) && op.Err != nil {
-		return op.Err
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return errors.New(dnsErr.Err)
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Err != nil {
+		return opErr.Err
 	}
 	return errors.New("connect failed")
 }
 
-// entryFor returns the entry address recorded for a config at seed time.
-func (a *application) entryFor(name string) (string, bool) {
-	a.entryMu.RLock()
-	defer a.entryMu.RUnlock()
+// entryAddr returns the entry address read for a config by recordEntries.
+func (a *application) entryAddr(name string) (string, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	addr, ok := a.entryAddrs[name]
 	return addr, ok
 }
 
-// recordEntries parses every config's entry address; a config without one gets
-// no entry and its probe reports the reason.
+// recordEntries reads every config's entry address when entry_tcp is on, and
+// logs each config that has none once, here, rather than on every cycle.
 func (a *application) recordEntries(cfgs []xraycfg.Config) {
-	addrs := make(map[string]string, len(cfgs))
-	for _, cfg := range cfgs {
-		if addr, err := xraycfg.Entry(cfg.Raw); err == nil {
-			addrs[cfg.Name] = addr
-		}
-	}
-	a.entryMu.Lock()
-	a.entryAddrs = addrs
-	a.entryMu.Unlock()
-}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-// run executes fn for 0..n-1 on at most workers goroutines.
-func run(ctx context.Context, workers, n int, fn func(int)) {
-	if n == 0 {
+	a.entryAddrs = nil
+	if rc := a.exporterConfig.Reachability; rc == nil || !rc.EntryTCP {
 		return
 	}
-	workers = max(1, min(workers, n))
-	queue := make(chan int, n)
-	for i := 0; i < n; i++ {
-		queue <- i
+	a.entryAddrs = make(map[string]string, len(cfgs))
+	for _, cfg := range cfgs {
+		addr, err := xraycfg.Entry(cfg.Raw)
+		if err != nil {
+			a.logger.Warn("entry address unknown, config not probed", "config", cfg.Name, "error", err)
+			continue
+		}
+		a.entryAddrs[cfg.Name] = addr
 	}
-	close(queue)
-
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
-		go func() {
-			defer wg.Done()
-			for i := range queue {
-				if ctx.Err() != nil {
-					return
-				}
-				fn(i)
-			}
-		}()
-	}
-	wg.Wait()
 }

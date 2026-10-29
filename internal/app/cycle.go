@@ -15,10 +15,8 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	jobs := a.jobs()
 	targets, resolvers, probeDomain := a.inputs()
 
-	// The direct probes come first: they describe the network the tunnel probes
-	// below run on.
-	a.controls(ctx)
-	a.entries(ctx, jobNames(jobs))
+	// The direct probes run beside the tunnel probes; the cycle waits for both.
+	direct := a.probeDirect(ctx, jobNames(jobs))
 
 	s := sampler.New(a.snap, sampler.Probers{}, sampler.Options{
 		Workers:         a.env.Workers,
@@ -30,6 +28,7 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 
 	start := time.Now()
 	s.Cycle(ctx, jobs, targets, resolvers)
+	<-direct
 	if ctx.Err() != nil {
 		// A reload or shutdown cut this pass short; configs it never reached still
 		// carry the previous pass's records.

@@ -25,10 +25,10 @@ const (
 
 var controlName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
-// Reachability turns on the probes that run outside any tunnel: the egress network
-// lookup, the controls and, with EntryTCP, a direct connect to each config's
-// entry address. The block is optional; without it the exporter sends none of
-// that traffic.
+// Reachability turns on the probes that run outside any tunnel: the egress
+// network lookup, the controls and, with EntryTCP, a direct connect to each
+// config's entry address. The block is optional; without it the exporter sends
+// none of that traffic.
 type Reachability struct {
 	Controls ReachabilityControls `yaml:"controls,omitempty"`
 	EntryTCP bool                 `yaml:"entry_tcp,omitempty"`
@@ -36,12 +36,13 @@ type Reachability struct {
 
 // ReachabilityControls are the direct probes run once per cycle.
 type ReachabilityControls struct {
-	HTTPS []HTTPControl `yaml:"https,omitempty"`
+	HTTPS []HostControl `yaml:"https,omitempty"`
 	TCP   []TCPControl  `yaml:"tcp,omitempty"`
-	DNS   []DNSControl  `yaml:"dns,omitempty"`
+	DNS   []HostControl `yaml:"dns,omitempty"`
 }
 
-type HTTPControl struct {
+// HostControl is an https or dns control: both name a host.
+type HostControl struct {
 	Name  string `yaml:"name"`
 	Host  string `yaml:"host"`
 	Class string `yaml:"class"`
@@ -50,12 +51,6 @@ type HTTPControl struct {
 type TCPControl struct {
 	Name  string `yaml:"name"`
 	Addr  string `yaml:"addr"`
-	Class string `yaml:"class"`
-}
-
-type DNSControl struct {
-	Name  string `yaml:"name"`
-	Host  string `yaml:"host"`
 	Class string `yaml:"class"`
 }
 
@@ -83,29 +78,32 @@ func (c ReachabilityControls) All() []Control {
 	return out
 }
 
-// validate checks the controls. Every error names the block, so the message
-// points at the YAML key.
-func (v *Reachability) validate() error {
-	if err := v.validateControls(); err != nil {
+// validate normalises the control targets in place and checks every control.
+// Each error names the block, so the message points at the YAML key.
+func (r *Reachability) validate() error {
+	if err := r.normalizeTargets(); err != nil {
+		return fmt.Errorf("reachability: controls: %w", err)
+	}
+	if err := r.checkControls(); err != nil {
 		return fmt.Errorf("reachability: controls: %w", err)
 	}
 	return nil
 }
 
-func (v *Reachability) validateControls() error {
-	for i, c := range v.Controls.HTTPS {
+func (r *Reachability) normalizeTargets() error {
+	for i, c := range r.Controls.HTTPS {
 		host, err := normalizeHost(c.Host)
 		if err != nil {
 			return fmt.Errorf("https %d: %w", i, err)
 		}
-		v.Controls.HTTPS[i].Host = host
+		r.Controls.HTTPS[i].Host = host
 	}
-	for i, c := range v.Controls.TCP {
+	for i, c := range r.Controls.TCP {
 		if err := validateAddr(c.Addr); err != nil {
 			return fmt.Errorf("tcp %d: %w", i, err)
 		}
 	}
-	for i, c := range v.Controls.DNS {
+	for i, c := range r.Controls.DNS {
 		host, err := normalizeHost(c.Host)
 		if err != nil {
 			return fmt.Errorf("dns %d: %w", i, err)
@@ -113,11 +111,15 @@ func (v *Reachability) validateControls() error {
 		if net.ParseIP(host) != nil {
 			return fmt.Errorf("dns %d: host must be a name, not an address", i)
 		}
-		v.Controls.DNS[i].Host = host
+		r.Controls.DNS[i].Host = host
 	}
+	return nil
+}
 
+// checkControls checks names, classes and duplicates.
+func (r *Reachability) checkControls() error {
 	seen := make(map[string]struct{})
-	for _, c := range v.Controls.All() {
+	for _, c := range r.Controls.All() {
 		if !controlName.MatchString(c.Name) {
 			return fmt.Errorf("%s control %q: name must be lowercase letters, digits, - or _", c.Kind, c.Name)
 		}

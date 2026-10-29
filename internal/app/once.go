@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/health"
 	"github.com/OPAL-vpn/xray-exporter/internal/report"
 )
@@ -18,7 +19,7 @@ func (a *application) once(ctx context.Context) error {
 	}
 
 	if a.reachabilityConfig() != nil {
-		a.lookupReachability(ctx, newLookuper())
+		a.lookupEgress(ctx, egress.New())
 	}
 	a.cycle(ctx, deadline)
 

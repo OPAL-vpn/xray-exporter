@@ -74,6 +74,7 @@ func TestReachabilityRejected(t *testing.T) {
 		{"scheme in host", ctl("    https:\n      - { name: a, host: \"https://ya.ru\", class: domestic }\n"), "scheme"},
 		{"dns address", ctl("    dns:\n      - { name: a, host: 1.1.1.1, class: foreign }\n"), "not an address"},
 		{"duplicate", ctl("    tcp:\n      - { name: a, addr: \"1.1.1.1:443\", class: foreign }\n      - { name: a, addr: \"8.8.8.8:443\", class: foreign }\n"), "duplicate"},
+		{"bad host", ctl("    https:\n      - { name: a, host: \"\", class: domestic }\n"), "host is required"},
 		{"bad name", ctl("    tcp:\n      - { name: A b, addr: \"1.1.1.1:443\", class: foreign }\n"), "name must be"},
 	}
 	for _, tt := range tests {

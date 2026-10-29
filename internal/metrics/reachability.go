@@ -1,50 +1,49 @@
 package metrics
 
 import (
-	"sort"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 )
 
-// ReachabilitySpec declares the direct probes. Setting one switches the reachability
-// families on; the zero Snapshot exports none of them.
+// This file holds everything the optional reachability block exports. That
+// includes xray_network_info: it is the label set every other reachability
+// series is read against, so it lives with them.
+
+// ReachabilitySpec declares the direct probes. Setting one switches the
+// reachability families on; the zero Snapshot exports none of them.
 type ReachabilitySpec struct {
 	Controls []config.Control
 	EntryTCP bool
 }
 
-type controlKey struct {
-	kind string
-	name string
-}
-
+// controlState is one declared control; its map key is kind/name.
 type controlState struct {
-	class  string
-	up     bool
-	err    error
-	lookup *float64
+	kind, name, class string
+	up                bool
+	seconds           *float64
 }
 
 // entryState is one config's direct connect to its entry address.
 type entryState struct {
-	up     bool
-	err    error
-	lookup *float64
+	up      bool
+	seconds *float64
 }
 
 type reachabilityState struct {
 	spec     ReachabilitySpec
-	id       reachability.Identity
+	id       egress.Identity
 	hasID    bool
-	controls map[controlKey]*controlState
+	controls map[string]*controlState
 }
 
-// SetReachability declares the direct probes, keeping the results of any control
-// that is still declared. nil switches the feature off.
+func controlKey(kind, name string) string { return kind + "/" + name }
+
+// SetReachability declares the direct probes, keeping the results of any
+// control that is still declared. nil switches the feature off.
 func (s *Snapshot) SetReachability(spec *ReachabilitySpec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -54,63 +53,64 @@ func (s *Snapshot) SetReachability(spec *ReachabilitySpec) {
 		return
 	}
 	if s.reachability == nil {
-		s.reachability = &reachabilityState{controls: make(map[controlKey]*controlState)}
+		s.reachability = &reachabilityState{controls: make(map[string]*controlState)}
 	}
-	v := s.reachability
-	v.spec = *spec
+	rs := s.reachability
+	rs.spec = *spec
 
-	keep := make(map[controlKey]struct{}, len(spec.Controls))
+	keep := make(map[string]struct{}, len(spec.Controls))
 	for _, c := range spec.Controls {
-		key := controlKey{kind: c.Kind, name: c.Name}
+		key := controlKey(c.Kind, c.Name)
 		keep[key] = struct{}{}
-		if state, ok := v.controls[key]; ok {
+		if state, ok := rs.controls[key]; ok {
 			state.class = c.Class
 			continue
 		}
-		v.controls[key] = &controlState{class: c.Class}
+		rs.controls[key] = &controlState{kind: c.Kind, name: c.Name, class: c.Class}
 	}
-	for key := range v.controls {
+	for key := range rs.controls {
 		if _, ok := keep[key]; !ok {
-			delete(v.controls, key)
+			delete(rs.controls, key)
 		}
 	}
 }
 
-// SetIdentity stores the egress network. A failed lookup stores nothing, so the
-// last good answer stays.
-func (s *Snapshot) SetIdentity(id reachability.Identity) {
+// SetIdentity stores the egress network and returns the previous one, if any. A
+// failed lookup stores nothing, so the last good answer stays.
+func (s *Snapshot) SetIdentity(id egress.Identity) (previous egress.Identity, had bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.reachability == nil {
-		return
+	rs := s.reachability
+	if rs == nil {
+		return egress.Identity{}, false
 	}
-	s.reachability.id = id
-	s.reachability.hasID = true
+	previous, had = rs.id, rs.hasID
+	rs.id, rs.hasID = id, true
+	return previous, had
 }
 
 // SetControl records a direct probe, keeping the last successful latency when
 // it fails. A control SetReachability did not declare is ignored.
-func (s *Snapshot) SetControl(kind, name string, up bool, rtt time.Duration, err error) {
+func (s *Snapshot) SetControl(kind, name string, up bool, rtt time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.reachability == nil {
 		return
 	}
-	state, ok := s.reachability.controls[controlKey{kind: kind, name: name}]
+	state, ok := s.reachability.controls[controlKey(kind, name)]
 	if !ok {
 		return
 	}
 	state.up = up
-	state.err = err
 	if up {
-		setLatency(&state.lookup, rtt)
+		setLatency(&state.seconds, rtt)
 	}
 }
 
 // SetEntry records a config's direct connect to its entry address.
-func (s *Snapshot) SetEntry(config string, up bool, rtt time.Duration, err error) {
+func (s *Snapshot) SetEntry(config string, up bool, rtt time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -122,51 +122,41 @@ func (s *Snapshot) SetEntry(config string, up bool, rtt time.Duration, err error
 		cfg.entry = &entryState{}
 	}
 	cfg.entry.up = up
-	cfg.entry.err = err
 	if up {
-		setLatency(&cfg.entry.lookup, rtt)
+		setLatency(&cfg.entry.seconds, rtt)
 	}
 }
 
-func sortedControlKeys(controls map[controlKey]*controlState) []controlKey {
-	keys := make([]controlKey, 0, len(controls))
-	for key := range controls {
-		keys = append(keys, key)
+func collectReachability(ch chan<- prometheus.Metric, rs *reachabilityState) {
+	if rs.hasID {
+		ch <- prometheus.MustNewConstMetric(networkInfo.desc, prometheus.GaugeValue, 1, rs.id.ASName, rs.id.Country)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].kind != keys[j].kind {
-			return keys[i].kind < keys[j].kind
-		}
-		return keys[i].name < keys[j].name
-	})
-	return keys
-}
-
-func collectReachability(ch chan<- prometheus.Metric, v *reachabilityState) {
-	if v.hasID {
-		ch <- prometheus.MustNewConstMetric(networkInfo.desc, prometheus.GaugeValue, 1, v.id.ASName, v.id.Country)
-	}
-	for _, key := range sortedControlKeys(v.controls) {
-		state := v.controls[key]
-		labels := []string{key.kind, key.name, state.class}
+	for _, key := range sortedKeys(rs.controls) {
+		state := rs.controls[key]
+		labels := []string{state.kind, state.name, state.class}
 		ch <- prometheus.MustNewConstMetric(controlUp.desc, prometheus.GaugeValue, boolValue(state.up), labels...)
-		if state.lookup != nil {
-			ch <- prometheus.MustNewConstMetric(controlSeconds.desc, prometheus.GaugeValue, *state.lookup, labels...)
+		if state.seconds != nil {
+			ch <- prometheus.MustNewConstMetric(controlSeconds.desc, prometheus.GaugeValue, *state.seconds, labels...)
 		}
 	}
 }
 
+// collectEntry emits a config's entry series; a config never probed reads 0.
 func collectEntry(ch chan<- prometheus.Metric, name string, entry *entryState) {
-	ch <- prometheus.MustNewConstMetric(entryTCPUp.desc, prometheus.GaugeValue, boolValue(entry != nil && entry.up), name)
-	if entry != nil && entry.lookup != nil {
-		ch <- prometheus.MustNewConstMetric(entryTCPSeconds.desc, prometheus.GaugeValue, *entry.lookup, name)
+	if entry == nil {
+		entry = &entryState{}
+	}
+	ch <- prometheus.MustNewConstMetric(entryTCPUp.desc, prometheus.GaugeValue, boolValue(entry.up), name)
+	if entry.seconds != nil {
+		ch <- prometheus.MustNewConstMetric(entryTCPSeconds.desc, prometheus.GaugeValue, *entry.seconds, name)
 	}
 }
 
-// ReachabilityExport is the direct probes as plain values, for the one-shot report.
+// ReachabilityExport is the direct probes as plain values, for the one-shot
+// report.
 type ReachabilityExport struct {
 	HasIdentity bool
-	Identity    reachability.Identity
+	Identity    egress.Identity
 	Controls    []ControlExport
 }
 
@@ -175,20 +165,19 @@ type ControlExport struct {
 	Up                bool
 }
 
-func exportReachability(v *reachabilityState) *ReachabilityExport {
-	if v == nil {
+func exportReachability(rs *reachabilityState) *ReachabilityExport {
+	if rs == nil {
 		return nil
 	}
-	out := &ReachabilityExport{HasIdentity: v.hasID, Identity: v.id}
-	for _, key := range sortedControlKeys(v.controls) {
-		state := v.controls[key]
-		out.Controls = append(out.Controls, ControlExport{Kind: key.kind, Name: key.name, Class: state.class, Up: state.up})
+	out := &ReachabilityExport{HasIdentity: rs.hasID, Identity: rs.id}
+	for _, key := range sortedKeys(rs.controls) {
+		state := rs.controls[key]
+		out.Controls = append(out.Controls, ControlExport{Kind: state.kind, Name: state.name, Class: state.class, Up: state.up})
 	}
 	return out
 }
 
 // EntryExport is a config's direct connect result.
 type EntryExport struct {
-	Up  bool
-	Err error
+	Up bool
 }

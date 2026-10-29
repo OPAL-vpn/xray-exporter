@@ -1,15 +1,15 @@
 package metrics
 
 import (
-	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
-	"github.com/OPAL-vpn/xray-exporter/internal/reachability"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 )
 
-func reachabilitySpec() *ReachabilitySpec {
+func testSpec() *ReachabilitySpec {
 	return &ReachabilitySpec{
 		Controls: []config.Control{
 			{Kind: config.ControlHTTPS, Name: "ya", Class: config.ClassDomestic, Target: "ya.ru"},
@@ -21,9 +21,14 @@ func reachabilitySpec() *ReachabilitySpec {
 func TestReachabilityOffExportsNothing(t *testing.T) {
 	snap := New()
 	snap.Seed("nl1", []string{"a.test"}, nil, seedTime)
-	for _, s := range gatherSamples(t, snap) {
+	snap.SetConfig("nl1", true, "v1")
+	samples := gatherSamples(t, snap)
+	if len(samplesNamed(samples, "xray_config_running")) == 0 {
+		t.Fatal("the snapshot emitted nothing, so the check below proves nothing")
+	}
+	for _, s := range samples {
 		for _, prefix := range []string{"xray_network_", "xray_control_", "xray_entry_"} {
-			if len(s.name) >= len(prefix) && s.name[:len(prefix)] == prefix {
+			if strings.HasPrefix(s.name, prefix) {
 				t.Errorf("%s emitted without a reachability block", s.name)
 			}
 		}
@@ -32,7 +37,7 @@ func TestReachabilityOffExportsNothing(t *testing.T) {
 
 func TestControlsSeededDown(t *testing.T) {
 	snap := New()
-	snap.SetReachability(reachabilitySpec())
+	snap.SetReachability(testSpec())
 	samples := gatherSamples(t, snap)
 
 	if n := len(samplesNamed(samples, "xray_network_info")); n != 0 {
@@ -51,9 +56,13 @@ func TestControlsSeededDown(t *testing.T) {
 
 func TestNetworkInfoKeepsLastIdentity(t *testing.T) {
 	snap := New()
-	snap.SetReachability(reachabilitySpec())
-	snap.SetIdentity(reachability.Identity{ASName: "PJSC MegaFon", Country: "RU"})
-	snap.SetIdentity(reachability.Identity{ASName: "MTS PJSC", Country: "RU"})
+	snap.SetReachability(testSpec())
+	if _, had := snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}); had {
+		t.Error("the first identity reported a previous one")
+	}
+	if prev, had := snap.SetIdentity(egress.Identity{ASName: "MTS PJSC", Country: "RU"}); !had || prev.ASName != "PJSC MegaFon" {
+		t.Errorf("previous = %+v, %v; want the first identity", prev, had)
+	}
 	infos := samplesNamed(gatherSamples(t, snap), "xray_network_info")
 
 	if len(infos) != 1 || infos[0].value != 1 ||
@@ -64,11 +73,11 @@ func TestNetworkInfoKeepsLastIdentity(t *testing.T) {
 
 func TestControlKeepsLastLatencyOnFailure(t *testing.T) {
 	snap := New()
-	snap.SetReachability(reachabilitySpec())
+	snap.SetReachability(testSpec())
 	key := labels("kind", "tcp", "name", "cf", "class", "foreign")
 
-	snap.SetControl(config.ControlTCP, "cf", true, 30*time.Millisecond, nil)
-	snap.SetControl(config.ControlTCP, "cf", false, 0, errors.New("timeout"))
+	snap.SetControl(config.ControlTCP, "cf", true, 30*time.Millisecond)
+	snap.SetControl(config.ControlTCP, "cf", false, 0)
 	samples := gatherSamples(t, snap)
 
 	if got := mustSample(t, samples, "xray_control_up", key); got != 0 {
@@ -81,8 +90,8 @@ func TestControlKeepsLastLatencyOnFailure(t *testing.T) {
 
 func TestReseedDropsRemovedControls(t *testing.T) {
 	snap := New()
-	snap.SetReachability(reachabilitySpec())
-	spec := reachabilitySpec()
+	snap.SetReachability(testSpec())
+	spec := testSpec()
 	spec.Controls = spec.Controls[:1]
 	snap.SetReachability(spec)
 	samples := gatherSamples(t, snap)
@@ -97,7 +106,7 @@ func TestReseedDropsRemovedControls(t *testing.T) {
 }
 
 func TestEntryTCPOnlyWhenEnabled(t *testing.T) {
-	spec := reachabilitySpec()
+	spec := testSpec()
 	snap := New()
 	snap.Seed("nl1", []string{"a.test"}, nil, seedTime)
 	snap.SetReachability(spec)
@@ -111,7 +120,7 @@ func TestEntryTCPOnlyWhenEnabled(t *testing.T) {
 	}
 	mustNoSample(t, samples, "xray_entry_tcp_seconds", labels("config", "nl1"))
 
-	snap.SetEntry("nl1", true, 20*time.Millisecond, nil)
+	snap.SetEntry("nl1", true, 20*time.Millisecond)
 	samples = gatherSamples(t, snap)
 	if got := mustSample(t, samples, "xray_entry_tcp_up", labels("config", "nl1")); got != 1 {
 		t.Errorf("entry_tcp_up = %v, want 1", got)
@@ -122,4 +131,18 @@ func TestEntryTCPOnlyWhenEnabled(t *testing.T) {
 
 	snap.Drop("nl1")
 	mustNoSample(t, gatherSamples(t, snap), "xray_entry_tcp_up", labels("config", "nl1"))
+}
+
+func TestReDeclareKeepsControlResults(t *testing.T) {
+	snap := New()
+	snap.SetReachability(testSpec())
+	snap.SetControl(config.ControlTCP, "cf", true, 30*time.Millisecond)
+
+	snap.SetReachability(testSpec())
+	key := labels("kind", "tcp", "name", "cf", "class", "foreign")
+	samples := gatherSamples(t, snap)
+	if got := mustSample(t, samples, "xray_control_up", key); got != 1 {
+		t.Errorf("control_up = %v after a reload that kept the control, want 1", got)
+	}
+	mustSample(t, samples, "xray_control_seconds", key)
 }

@@ -81,7 +81,7 @@ sets.
 | `WORKERS` | `8` | concurrent probes per config |
 | `PROBE_TIMEOUT` | `10s` | per HTTP/DNS probe |
 | `RESOLVER_TIMEOUT` | `5s` | per DoH/DoT probe |
-| `CONTROL_TIMEOUT` | `5s` | per direct [reachability](#reachability) probe |
+| `CONTROL_TIMEOUT` | `5s` | per direct [reachability](#reachability) probe, controls and entry connects |
 | `XRAY_LOG_LEVEL` | `warning` | xray's own verbosity |
 | `XRAY_LOCATION_ASSET` | `/usr/local/share/xray` | geo asset directory |
 | `XRAY_LOG_FILE` | unset | mirror xray's stream into one file |
@@ -294,7 +294,7 @@ block (`reachability: {}`) turns on the network lookup alone.
 
 ```yaml
 reachability:
-  controls:                      # direct probes, once per INTERVAL
+  controls:                      # direct probes, once per measurement cycle
     https:
       - { name: ya,     host: ya.ru,      class: domestic }
       - { name: google, host: google.com, class: foreign }
@@ -331,12 +331,14 @@ address is never a label or a log field.
 
 The exporter sends no traffic outside a tunnel, with two exceptions: the config
 source fetch itself (see [Config sources](#config-sources)) and, only when the
-config has a `reachability` block, the [Reachability](#reachability) lookups and controls, which
-describe the host's own network and so cannot go through a tunnel. HTTP and TLS
-probes, DoH, DoT and the UDP DNS probe all reach their peers through an xray
-instance's loopback inbound, so a config's `routing` decides the path. Apart
-from those two exceptions, only loopback is dialed directly: the SOCKS port and DNS inbound the exporter starts,
-and the free-port probe.
+config has a `reachability` block, the [Reachability](#reachability) lookup,
+controls and entry probes. They describe the host's own network, so they cannot
+go through a tunnel.
+
+HTTP and TLS probes, DoH, DoT and the UDP DNS probe all reach their peers
+through an xray instance's loopback inbound, so a config's `routing` decides
+the path. Apart from those two exceptions, only loopback is dialed directly:
+the SOCKS port and DNS inbound the exporter starts, and the free-port probe.
 
 A tunnel that is down therefore surfaces as failed probes and
 `xray_config_running` 0, not as measurements from a direct path.

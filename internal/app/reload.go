@@ -59,6 +59,9 @@ func (a *application) reload(ctx context.Context) {
 	}
 
 	restartedAll := a.applyInputs(exporterConfig, upstream)
+	// entry_tcp may have been switched on or off, and a failed fetch below
+	// would keep the old set without reaching seed.
+	a.recordEntries(a.configs)
 	if sourceChanged {
 		a.source = source
 		a.policy = policy
@@ -118,7 +121,7 @@ func (a *application) applyInputs(exporterConfig *config.ExporterConfig, upstrea
 	a.upstream = upstream
 	a.exporterConfig = exporterConfig
 	a.snap.SetReachability(reachabilitySpec(exporterConfig))
-	a.wakeReachability()
+	a.wakeEgress()
 	var previous *xrayproc.Manager
 	if restartedAll {
 		previous = a.manager
