@@ -18,3 +18,15 @@ dns_resolvers:
 #   type: remnawave
 #   url: https://panel.example.com/api/sub/<shortUuid>
 #   refresh: 5m
+
+# Omit this block to send no traffic outside a tunnel. An empty block
+# (`reachability: {}`) only looks up the network the host is on.
+# reachability:
+#   controls:
+#     https:
+#       - { name: ya,     host: ya.ru,      class: domestic }
+#       - { name: google, host: google.com, class: foreign }
+#       - { name: panel,  host: "example.com:8443", class: foreign }  # a port is optional
+#     tcp:
+#       - { name: cf, addr: "1.1.1.1:443", class: foreign }
+#   entry_tcp: true

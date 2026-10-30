@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/miekg/dns"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 )
 
 // newQuery assigns a random ID, which DoH checks against the reply.
@@ -13,14 +15,12 @@ func newQuery(name string) *dns.Msg {
 	return query
 }
 
-// HostOnly strips a path and IPv6 brackets from a target host.
+// HostOnly strips a path, a port and IPv6 brackets from a target host, so a DNS
+// question names the host and nothing else.
 func HostOnly(host string) string {
-	host = strings.TrimSpace(host)
-	if i := strings.IndexByte(host, '/'); i >= 0 {
-		host = host[:i]
+	target, err := netutil.ParseTarget(host)
+	if err != nil {
+		return strings.TrimSpace(host)
 	}
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		host = host[1 : len(host)-1]
-	}
-	return host
+	return target.Host
 }

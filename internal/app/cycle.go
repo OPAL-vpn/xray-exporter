@@ -15,6 +15,9 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	jobs := a.jobs()
 	targets, resolvers, probeDomain := a.inputs()
 
+	// The direct probes run beside the tunnel probes; the cycle waits for both.
+	direct := a.probeDirect(ctx, jobNames(jobs))
+
 	s := sampler.New(a.snap, sampler.Probers{}, sampler.Options{
 		Workers:         a.env.Workers,
 		ProbeTimeout:    a.env.ProbeTimeout,
@@ -25,6 +28,7 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 
 	start := time.Now()
 	s.Cycle(ctx, jobs, targets, resolvers)
+	<-direct
 	if ctx.Err() != nil {
 		// A reload or shutdown cut this pass short; configs it never reached still
 		// carry the previous pass's records.
@@ -134,6 +138,14 @@ func (a *application) inputs() ([]config.Target, []config.Resolver, string) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.exporterConfig.Targets, a.exporterConfig.Resolvers, a.exporterConfig.DNSProbeDomain
+}
+
+func jobNames(jobs []sampler.Job) []string {
+	names := make([]string, len(jobs))
+	for i, job := range jobs {
+		names[i] = job.Name
+	}
+	return names
 }
 
 func hasJob(jobs []sampler.Job, name string) bool {

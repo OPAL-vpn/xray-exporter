@@ -30,6 +30,9 @@ type Snapshot struct {
 	hasFetch    bool
 	source      string
 
+	// reachability is nil unless the config declares a reachability block.
+	reachability *reachabilityState
+
 	collector prometheus.Collector
 }
 

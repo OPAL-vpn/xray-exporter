@@ -41,8 +41,15 @@ func (c *snapshotCollector) Collect(ch chan<- prometheus.Metric) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	entryTCP := s.reachability != nil && s.reachability.spec.EntryTCP
 	for _, name := range sortedKeys(s.configs) {
 		collectConfig(ch, name, s.configs[name])
+		if entryTCP {
+			collectEntry(ch, name, s.configs[name].entry)
+		}
+	}
+	if s.reachability != nil {
+		collectReachability(ch, s.reachability)
 	}
 
 	if s.hasFetch {

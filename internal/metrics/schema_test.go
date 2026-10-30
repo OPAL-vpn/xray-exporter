@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/egress"
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
@@ -28,6 +29,13 @@ func TestAllNamesCoverEverything(t *testing.T) {
 	snap.IncFetchError()
 	snap.SetFetchSuccess(secondTime)
 	snap.SetSource("remnawave")
+	snap.SetReachability(&ReachabilitySpec{
+		Controls: []config.Control{{Kind: config.ControlTCP, Name: "cf", Class: config.ClassForeign, Target: "1.1.1.1:443"}},
+		EntryTCP: true,
+	})
+	snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}, secondTime)
+	snap.SetControl(config.ControlTCP, "cf", true, time.Millisecond)
+	snap.SetEntry("nl1", true, time.Millisecond)
 
 	samples := gatherSamples(t, snap)
 	emitted := make(map[string]struct{})
@@ -53,7 +61,7 @@ func TestAllNamesCoverEverything(t *testing.T) {
 		}
 	}
 
-	if got, want := len(AllNames()), 23; got != want {
+	if got, want := len(AllNames()), 29; got != want {
 		t.Errorf("AllNames has %d names, want the %d in the spec", got, want)
 	}
 	prometheusName := regexp.MustCompile(`^xray_[a-z0-9_]+$`)

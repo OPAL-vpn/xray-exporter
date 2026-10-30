@@ -56,8 +56,8 @@ func Run(ctx context.Context, env Env, opts Options, logger *slog.Logger) error 
 	return a.serve(ctx)
 }
 
-// application is the process state. mu guards exporterConfig, manager and
-// upstream; a reload interrupts the running cycle before writing them.
+// application is the process state. mu guards exporterConfig, manager, upstream
+// and entryAddrs; a reload interrupts the running cycle before writing them.
 type application struct {
 	env        Env
 	opts       Options
@@ -77,11 +77,16 @@ type application struct {
 	exporterConfig *config.ExporterConfig
 	manager        *xrayproc.Manager
 	upstream       xraycfg.Upstream
+	// entryAddrs maps a config to its entry host:port; nil unless entry_tcp is on.
+	entryAddrs map[string]string
 
 	// configs and seeded are the reconciled set and the names the snapshot
 	// declares; they are written only while holding refreshMu.
 	configs []xraycfg.Config
 	seeded  map[string]struct{}
+
+	// egressWake interrupts the egress lookup loop's wait; buffered 1.
+	egressWake chan struct{}
 
 	// refreshMu serializes refreshes, which interrupt and restart the cycle.
 	refreshMu sync.Mutex
@@ -130,7 +135,9 @@ func newApplication(env Env, opts Options, logger *slog.Logger) (*application, e
 		sourceConfig:   exporterConfig.XrayConfigSource,
 		seeded:         make(map[string]struct{}),
 		refreshWake:    make(chan struct{}, 1),
+		egressWake:     make(chan struct{}, 1),
 	}
+	a.snap.SetReachability(reachabilitySpec(exporterConfig))
 	a.manager = xrayproc.NewManager(upstream, env.XrayLogLevel, xrayLogger)
 	a.snap.SetBuildInfo(opts.Version, runtime.Version())
 	a.snap.SetSource(source.Kind())

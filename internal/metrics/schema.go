@@ -104,6 +104,24 @@ var (
 	buildInfo = newMetricDef("build_info",
 		"Build version and Go version of the exporter.",
 		"version", "go_version")
+
+	networkInfo = newMetricDef("network_info",
+		"The network the host egresses from, as ipinfo.io reports it.",
+		"as_name", "country")
+	networkTimestamp = newMetricDef("network_timestamp_seconds",
+		"When the egress network was last looked up successfully.")
+	controlUp = newMetricDef("control_up",
+		"Whether a direct control probe succeeded, outside any tunnel.",
+		"kind", "name", "class")
+	controlSeconds = newMetricDef("control_seconds",
+		"Round trip of the last successful control probe.",
+		"kind", "name", "class")
+	entryTCPUp = newMetricDef("entry_tcp_up",
+		"Whether a direct TCP connect to the config's entry address succeeded.",
+		"config")
+	entryTCPSeconds = newMetricDef("entry_tcp_seconds",
+		"Connect time of the last successful direct connect to the entry address.",
+		"config")
 )
 
 // allMetrics is every family, in AllNames order.
@@ -116,6 +134,8 @@ var allMetrics = []*metricDef{
 	reloadTotal, reloadErrors,
 	fetchTotal, fetchErrors, fetchTimestamp, sourceInfo,
 	buildInfo,
+	networkInfo, networkTimestamp, controlUp, controlSeconds,
+	entryTCPUp, entryTCPSeconds,
 }
 
 // AllNames lists every metric name, for checking the dashboard.

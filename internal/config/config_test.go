@@ -275,7 +275,7 @@ func TestLoadRejectsUnparseableHosts(t *testing.T) {
 		{name: "unbracketed ipv6 with path", host: "2606:4700:4700::1111/health", want: "an IPv6 address must be bracketed"},
 		{name: "brackets without an address", host: "[not-an-ip]", want: "is not a bracketed address"},
 		{name: "unclosed bracket", host: "[2001:db8::1", want: "is not a bracketed address"},
-		{name: "port", host: "youtube.com:443", want: "must be a hostname or a bracketed IPv6 address"},
+		{name: "port", host: "youtube.com:443", want: "a target takes no port"},
 	}
 
 	for _, tc := range cases {

@@ -12,6 +12,7 @@ type configState struct {
 	targets   map[string]*targetState
 	resolvers map[resolverKey]*resolverState
 	cycle     cycleState
+	entry     *entryState
 }
 
 // targetState keeps raw results for the report. The latency pointers stay nil

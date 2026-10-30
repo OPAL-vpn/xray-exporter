@@ -10,6 +10,8 @@ import (
 // Export is the snapshot as plain values, sorted for a stable report.
 type Export struct {
 	Configs []ConfigExport
+	// Reachability is nil unless the config declares a reachability block.
+	Reachability *ReachabilityExport
 }
 
 type ConfigExport struct {
@@ -19,6 +21,8 @@ type ConfigExport struct {
 	Cycle       CycleExport
 	Targets     []TargetExport
 	Resolvers   []ResolverExport
+	// Entry is nil until a direct connect ran or when entry_tcp is off.
+	Entry *EntryExport
 }
 
 type CycleExport struct {
@@ -53,7 +57,7 @@ func (s *Snapshot) Export() Export {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	exp := Export{Configs: make([]ConfigExport, 0, len(s.configs))}
+	exp := Export{Configs: make([]ConfigExport, 0, len(s.configs)), Reachability: exportReachability(s.reachability)}
 	for _, name := range sortedKeys(s.configs) {
 		exp.Configs = append(exp.Configs, exportConfig(name, s.configs[name]))
 	}
@@ -73,6 +77,10 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		},
 		Targets:   make([]TargetExport, 0, len(cfg.targets)),
 		Resolvers: make([]ResolverExport, 0),
+	}
+
+	if cfg.entry != nil {
+		row.Entry = &EntryExport{Up: cfg.entry.up}
 	}
 
 	for _, target := range sortedKeys(cfg.targets) {

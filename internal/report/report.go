@@ -20,6 +20,7 @@ const absent = "-"
 func Render(w io.Writer, exp metrics.Export) error {
 	r := &renderer{w: w}
 	r.printf("xray-exporter report %s\n", time.Now().UTC().Format(time.RFC3339))
+	renderReachability(r, exp.Reachability)
 	for _, cfg := range exp.Configs {
 		renderConfig(r, cfg)
 	}
@@ -55,6 +56,9 @@ func (r *renderer) table(row func(*renderer)) {
 func renderConfig(r *renderer, cfg metrics.ConfigExport) {
 	r.printf("\n==== config: %s ====\n", cfg.Name)
 	r.printf("xray: %s\n", orAbsent(cfg.XrayVersion))
+	if cfg.Entry != nil {
+		r.printf("entry tcp: %s\n", upCell(cfg.Entry.Up))
+	}
 
 	r.table(func(t *renderer) {
 		t.printf("target\tstatus\ttls\tttfb\ttotal\tdns\n")
@@ -79,6 +83,35 @@ func renderConfig(r *renderer, cfg metrics.ConfigExport) {
 				resolver.Name, orAbsent(transports[metrics.TransportDoH]), orAbsent(transports[metrics.TransportDoT]))
 		}
 	})
+}
+
+// renderReachability prints the egress network and the controls.
+func renderReachability(r *renderer, v *metrics.ReachabilityExport) {
+	if v == nil {
+		return
+	}
+	r.printf("\n==== reachability ====\n")
+	if v.HasIdentity {
+		r.printf("egress: %s, %s\n", orAbsent(v.Identity.ASName), orAbsent(v.Identity.Country))
+	} else {
+		r.printf("egress: %s\n", absent)
+	}
+	if len(v.Controls) == 0 {
+		return
+	}
+	r.table(func(t *renderer) {
+		t.printf("control\tkind\tclass\tresult\n")
+		for _, c := range v.Controls {
+			t.printf("%s\t%s\t%s\t%s\n", c.Name, c.Kind, c.Class, upCell(c.Up))
+		}
+	})
+}
+
+func upCell(up bool) string {
+	if up {
+		return "up"
+	}
+	return "fail"
 }
 
 func statusCell(t metrics.TargetExport) string {
