@@ -138,7 +138,7 @@ var allMetrics = []*metricDef{
 	entryTCPUp, entryTCPSeconds,
 }
 
-// AllNames lists every metric name, for checking the dashboard.
+// AllNames lists every metric name.
 func AllNames() []string {
 	names := make([]string, len(allMetrics))
 	for i, metric := range allMetrics {
