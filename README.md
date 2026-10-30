@@ -240,6 +240,7 @@ self-labelling.
 | `xray_exporter_config_source_info` | type | 1, the configured source |
 | `xray_build_info` | version, go_version | 1 |
 | `xray_network_info` | as_name, country | 1, the network the host egresses from (ipinfo.io); [Reachability](#reachability) only |
+| `xray_network_timestamp_seconds` | — | last successful egress lookup; absent until then |
 | `xray_control_up` | kind, name, class | direct probe succeeded |
 | `xray_control_seconds` | kind, name, class | last successful round trip |
 | `xray_entry_tcp_up` | config | direct connect to the config's entry succeeded |
@@ -308,7 +309,11 @@ reachability:
 **The network** is looked up once an hour (and on `SIGHUP`) at `ipinfo.io` and
 exported as `xray_network_info{as_name, country}`. Nothing is declared by hand.
 It is a third party's best guess, shown and never acted on; a failed lookup
-keeps the last good answer and logs a warning. Tag any probe with it:
+keeps the last good answer and logs a warning, retrying a minute later and then
+backing off a minute at a time to five, because a host that cannot reach
+`ipinfo.io` should not ask every minute. `xray_network_timestamp_seconds` ages
+the answer, so `time() - xray_network_timestamp_seconds` tells a stale identity
+from a fresh one. Tag any probe with it:
 
 ```promql
 xray_probe_up * on(instance) group_left(as_name, country) xray_network_info
@@ -316,7 +321,9 @@ xray_probe_up * on(instance) group_left(as_name, country) xray_network_info
 
 **Controls** answer "what is this network doing": `https` is a GET through the
 host's own resolver (up means any HTTP response), `tcp` a connect to a fixed
-address, `dns` an `A` query through the system resolver. Each has a `class`,
+address, `dns` an `A` query through the system resolver. An `https` control
+takes a port when the site is not on 443 (`host: "ya.ru:8443"`); a target does
+not, because its DNS probe takes the name. Each control has a `class`,
 `domestic` or `foreign`, and the split between them is the signal: domestic up
 and foreign down looks like a whitelist regime, everything down is a dead line,
 DNS down with TCP up is a DNS-level block. The exporter publishes raw results;

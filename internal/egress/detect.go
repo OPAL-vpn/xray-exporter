@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"time"
@@ -40,14 +41,21 @@ func New() *Detector { return newDetector(ipinfoURL) }
 
 // newDetector takes the URL so tests can point it at an httptest server.
 func newDetector(url string) *Detector {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// The lookup describes this host's own route; an environment proxy would
-	// report the proxy's network.
-	transport.Proxy = nil
 	return &Detector{
 		url: url,
 		client: &http.Client{
-			Transport:     transport,
+			// The lookup describes this host's own route, so the transport carries no
+			// proxy: an environment proxy would report the proxy's network. The other
+			// settings are http.DefaultTransport's, sized for one request an hour.
+			Transport: &http.Transport{
+				Proxy:                 nil,
+				DialContext:           (&net.Dialer{Timeout: lookupTimeout, KeepAlive: 30 * time.Second}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          1,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: time.Second,
+			},
 			Timeout:       lookupTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},

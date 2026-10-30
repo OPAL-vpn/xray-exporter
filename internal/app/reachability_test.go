@@ -195,6 +195,38 @@ func TestEgressLoopLooksUpOnStartAndOnWake(t *testing.T) {
 	}
 }
 
+func TestEgressLoopKeepsLookingWhileTheBlockIsOn(t *testing.T) {
+	a, _ := reachabilityApp(&config.Reachability{})
+	fake := &fakeLookuper{err: errors.New("down")}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go a.egressLoop(ctx, fake)
+
+	// A failure waits a minute before the next attempt, so a second call means the
+	// loop kept the block on rather than dropping into the hourly wait.
+	waitFor(t, "the startup lookup", func() bool { return fake.calls.Load() == 1 })
+	a.wakeEgress()
+	waitFor(t, "a retry after a failure", func() bool { return fake.calls.Load() == 2 })
+}
+
+func TestRetryWaitGrowsAndCaps(t *testing.T) {
+	for _, tc := range []struct {
+		failures int
+		want     time.Duration
+	}{
+		{failures: 1, want: time.Minute},
+		{failures: 2, want: 2 * time.Minute},
+		{failures: 4, want: 4 * time.Minute},
+		{failures: 5, want: 5 * time.Minute},
+		{failures: 6, want: 5 * time.Minute},
+		{failures: 1440, want: 5 * time.Minute},
+	} {
+		if got := retryWait(tc.failures); got != tc.want {
+			t.Errorf("retryWait(%d) = %s, want %s", tc.failures, got, tc.want)
+		}
+	}
+}
+
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
 	deadline := time.After(5 * time.Second)

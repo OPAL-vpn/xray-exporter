@@ -71,3 +71,19 @@ func TestLookupContextCancelled(t *testing.T) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }
+
+// TestDetectorIgnoresProxyEnvironment guards the reason the transport is built
+// here: the lookup reports this host's network, not a proxy's.
+func TestDetectorIgnoresProxyEnvironment(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("https_proxy", "http://127.0.0.1:1")
+
+	d := New()
+	transport, ok := d.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", d.client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Error("the lookup would report the proxy's network instead of this host's")
+	}
+}

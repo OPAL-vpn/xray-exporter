@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"regexp"
-	"strconv"
+	"strings"
+
+	"github.com/OPAL-vpn/xray-exporter/internal/netutil"
 )
 
 // Control classes: where the probed host lives relative to the blocking regime.
@@ -92,7 +94,7 @@ func (r *Reachability) validate() error {
 
 func (r *Reachability) normalizeTargets() error {
 	for i, c := range r.Controls.HTTPS {
-		host, err := normalizeHost(c.Host)
+		host, err := normalizeControlHost(c.Host)
 		if err != nil {
 			return fmt.Errorf("https %d: %w", i, err)
 		}
@@ -104,16 +106,37 @@ func (r *Reachability) normalizeTargets() error {
 		}
 	}
 	for i, c := range r.Controls.DNS {
-		host, err := normalizeHost(c.Host)
+		host, err := normalizeDNSHost(c.Host)
 		if err != nil {
 			return fmt.Errorf("dns %d: %w", i, err)
-		}
-		if net.ParseIP(host) != nil {
-			return fmt.Errorf("dns %d: host must be a name, not an address", i)
 		}
 		r.Controls.DNS[i].Host = host
 	}
 	return nil
+}
+
+// normalizeControlHost accepts host[:port][/path]: a target's grammar plus the
+// port an https control adds over one.
+func normalizeControlHost(host string) (string, error) {
+	if _, err := netutil.ParseTarget(host); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(host), nil
+}
+
+// normalizeDNSHost accepts the name a dns control resolves, so it takes no port.
+func normalizeDNSHost(host string) (string, error) {
+	target, err := netutil.ParseTarget(host)
+	if err != nil {
+		return "", err
+	}
+	if target.Port != "" {
+		return "", fmt.Errorf("host %q: a dns control takes no port", host)
+	}
+	if net.ParseIP(target.Host) != nil {
+		return "", errors.New("host must be a name, not an address")
+	}
+	return strings.TrimSpace(host), nil
 }
 
 // checkControls checks names, classes and duplicates.
@@ -137,12 +160,8 @@ func (r *Reachability) checkControls() error {
 
 // validateAddr accepts host:port with a numeric port.
 func validateAddr(addr string) error {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil || host == "" {
-		return fmt.Errorf("addr %q must be host:port", addr)
-	}
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		return errors.New("addr " + strconv.Quote(addr) + " has an invalid port")
+	if _, _, err := netutil.HostPort(addr); err != nil {
+		return fmt.Errorf("addr %q must be host:port with a port in 1-65535", addr)
 	}
 	return nil
 }

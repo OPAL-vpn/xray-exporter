@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -181,42 +180,18 @@ func validateSourceURL(raw string) error {
 	return nil
 }
 
-// normalizeHost validates a target host and returns it trimmed. This is the
-// single owner of the accepted forms.
+// normalizeHost validates a target host and returns it trimmed. The accepted
+// forms are netutil.ParseTarget's; a target adds the rule that it takes no port.
 func normalizeHost(host string) (string, error) {
-	h := strings.TrimSpace(host)
-	if h == "" {
-		return "", errors.New("host is required")
+	target, err := netutil.ParseTarget(host)
+	if err != nil {
+		return "", err
 	}
-	// A scheme would break the DNS probe of the same target.
-	if strings.Contains(h, "://") {
-		return "", errors.New("host must not include a scheme")
+	// A target's DNS probe takes the name, so a port belongs to an https control.
+	if target.Port != "" {
+		return "", fmt.Errorf("host %q: a target takes no port", host)
 	}
-
-	name := h
-	if i := strings.IndexByte(name, '/'); i >= 0 {
-		name = name[:i]
-	}
-	if name == "" {
-		return "", fmt.Errorf("host %q has no name", h)
-	}
-
-	if strings.HasPrefix(name, "[") {
-		if !strings.HasSuffix(name, "]") || net.ParseIP(name[1:len(name)-1]) == nil {
-			return "", fmt.Errorf("host %q is not a bracketed address", h)
-		}
-		return h, nil
-	}
-	if ip := net.ParseIP(name); ip != nil {
-		if ip.To4() == nil {
-			return "", fmt.Errorf("host %q: an IPv6 address must be bracketed", h)
-		}
-		return h, nil
-	}
-	if strings.Contains(name, ":") {
-		return "", fmt.Errorf("host %q must be a hostname or a bracketed IPv6 address", h)
-	}
-	return h, nil
+	return strings.TrimSpace(host), nil
 }
 
 func validateUpstream(upstream string) error {

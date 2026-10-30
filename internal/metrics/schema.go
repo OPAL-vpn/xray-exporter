@@ -108,6 +108,8 @@ var (
 	networkInfo = newMetricDef("network_info",
 		"The network the host egresses from, as ipinfo.io reports it.",
 		"as_name", "country")
+	networkTimestamp = newMetricDef("network_timestamp_seconds",
+		"When the egress network was last looked up successfully.")
 	controlUp = newMetricDef("control_up",
 		"Whether a direct control probe succeeded, outside any tunnel.",
 		"kind", "name", "class")
@@ -132,7 +134,7 @@ var allMetrics = []*metricDef{
 	reloadTotal, reloadErrors,
 	fetchTotal, fetchErrors, fetchTimestamp, sourceInfo,
 	buildInfo,
-	networkInfo, controlUp, controlSeconds,
+	networkInfo, networkTimestamp, controlUp, controlSeconds,
 	entryTCPUp, entryTCPSeconds,
 }
 

@@ -26,6 +26,7 @@ dns_resolvers:
 #     https:
 #       - { name: ya,     host: ya.ru,      class: domestic }
 #       - { name: google, host: google.com, class: foreign }
+#       - { name: panel,  host: "example.com:8443", class: foreign }  # a port is optional
 #     tcp:
 #       - { name: cf, addr: "1.1.1.1:443", class: foreign }
 #   entry_tcp: true

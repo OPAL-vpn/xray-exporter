@@ -57,17 +57,22 @@ func TestControlsSeededDown(t *testing.T) {
 func TestNetworkInfoKeepsLastIdentity(t *testing.T) {
 	snap := New()
 	snap.SetReachability(testSpec())
-	if _, had := snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}); had {
+	if _, had := snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}, seedTime); had {
 		t.Error("the first identity reported a previous one")
 	}
-	if prev, had := snap.SetIdentity(egress.Identity{ASName: "MTS PJSC", Country: "RU"}); !had || prev.ASName != "PJSC MegaFon" {
+	at := seedTime.Add(time.Hour)
+	if prev, had := snap.SetIdentity(egress.Identity{ASName: "MTS PJSC", Country: "RU"}, at); !had || prev.ASName != "PJSC MegaFon" {
 		t.Errorf("previous = %+v, %v; want the first identity", prev, had)
 	}
-	infos := samplesNamed(gatherSamples(t, snap), "xray_network_info")
+	samples := gatherSamples(t, snap)
+	infos := samplesNamed(samples, "xray_network_info")
 
 	if len(infos) != 1 || infos[0].value != 1 ||
 		infos[0].labels["as_name"] != "MTS PJSC" || infos[0].labels["country"] != "RU" {
 		t.Errorf("network_info = %+v, want one series for the latest identity", infos)
+	}
+	if got, want := mustSample(t, samples, "xray_network_timestamp_seconds", nil), unixSeconds(at); got != want {
+		t.Errorf("network_timestamp_seconds = %v, want %v", got, want)
 	}
 }
 

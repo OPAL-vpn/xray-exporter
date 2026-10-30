@@ -33,7 +33,7 @@ func TestAllNamesCoverEverything(t *testing.T) {
 		Controls: []config.Control{{Kind: config.ControlTCP, Name: "cf", Class: config.ClassForeign, Target: "1.1.1.1:443"}},
 		EntryTCP: true,
 	})
-	snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"})
+	snap.SetIdentity(egress.Identity{ASName: "PJSC MegaFon", Country: "RU"}, secondTime)
 	snap.SetControl(config.ControlTCP, "cf", true, time.Millisecond)
 	snap.SetEntry("nl1", true, time.Millisecond)
 
@@ -61,7 +61,7 @@ func TestAllNamesCoverEverything(t *testing.T) {
 		}
 	}
 
-	if got, want := len(AllNames()), 28; got != want {
+	if got, want := len(AllNames()), 29; got != want {
 		t.Errorf("AllNames has %d names, want the %d in the spec", got, want)
 	}
 	prometheusName := regexp.MustCompile(`^xray_[a-z0-9_]+$`)

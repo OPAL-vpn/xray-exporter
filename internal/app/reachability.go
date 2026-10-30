@@ -19,9 +19,15 @@ const (
 	// lookupInterval is how often the egress network is looked up. A provider
 	// changes rarely, so this is a courtesy to ipinfo.io, not a tuning knob.
 	lookupInterval = time.Hour
-	// lookupRetry replaces it after a failed lookup, so a transient failure at
-	// startup does not leave the network unknown for an hour.
-	lookupRetry = time.Minute
+	// lookupRetryStep is the first wait after a failed lookup and the step it
+	// grows by, so a transient failure at startup does not leave the network
+	// unknown for an hour.
+	lookupRetryStep = time.Minute
+	// lookupRetryMax caps that growth. A host that cannot reach ipinfo.io at all,
+	// which is the network this feature exists to describe, would otherwise ask
+	// once a minute for as long as it runs: 1440 requests a day against a third
+	// party that answers an hourly one.
+	lookupRetryMax = 5 * time.Minute
 )
 
 // lookuper detects the egress network; tests replace it.
@@ -54,13 +60,22 @@ func (a *application) wakeEgress() {
 }
 
 // egressLoop looks the egress network up at startup, on every reload and then
-// every lookupInterval (lookupRetry after a failure). It never blocks the first
-// probe cycle.
+// every lookupInterval. Consecutive failures retry sooner, backing off from
+// lookupRetryStep to lookupRetryMax, and a success returns to the hourly
+// cadence. It never blocks the first probe cycle.
 func (a *application) egressLoop(ctx context.Context, detector lookuper) {
+	failures := 0
 	for {
 		wait := lookupInterval
-		if a.reachabilityConfig() != nil && !a.lookupEgress(ctx, detector) {
-			wait = lookupRetry
+		if a.reachabilityConfig() == nil {
+			// Nothing to look up, and a count kept from an enabled block would make
+			// the first retry after it comes back skip the shorter steps.
+			failures = 0
+		} else if a.lookupEgress(ctx, detector) {
+			failures = 0
+		} else {
+			failures++
+			wait = retryWait(failures)
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -74,6 +89,12 @@ func (a *application) egressLoop(ctx context.Context, detector lookuper) {
 	}
 }
 
+// retryWait is the wait after the failures-th consecutive failed lookup: a
+// minute, growing by a minute, capped at lookupRetryMax.
+func retryWait(failures int) time.Duration {
+	return min(time.Duration(failures)*lookupRetryStep, lookupRetryMax)
+}
+
 // lookupEgress runs one detection and reports whether it produced an answer. A
 // failure keeps the last good identity.
 func (a *application) lookupEgress(ctx context.Context, detector lookuper) bool {
@@ -85,7 +106,7 @@ func (a *application) lookupEgress(ctx context.Context, detector lookuper) bool 
 		a.logger.Warn("egress lookup failed", "error", err)
 		return false
 	}
-	if previous, had := a.snap.SetIdentity(id); had && previous != id {
+	if previous, had := a.snap.SetIdentity(id, time.Now()); had && previous != id {
 		a.logger.Warn("egress network changed", "as_name", id.ASName, "country", id.Country,
 			"previous_as_name", previous.ASName, "previous_country", previous.Country)
 	} else {

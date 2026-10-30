@@ -36,6 +36,7 @@ type entryState struct {
 type reachabilityState struct {
 	spec     ReachabilitySpec
 	id       egress.Identity
+	idAt     time.Time
 	hasID    bool
 	controls map[string]*controlState
 }
@@ -75,9 +76,10 @@ func (s *Snapshot) SetReachability(spec *ReachabilitySpec) {
 	}
 }
 
-// SetIdentity stores the egress network and returns the previous one, if any. A
-// failed lookup stores nothing, so the last good answer stays.
-func (s *Snapshot) SetIdentity(id egress.Identity) (previous egress.Identity, had bool) {
+// SetIdentity stores the egress network and when it was read, and returns the
+// previous one, if any. A failed lookup stores nothing, so the last good answer
+// and its timestamp stay.
+func (s *Snapshot) SetIdentity(id egress.Identity, at time.Time) (previous egress.Identity, had bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -86,7 +88,7 @@ func (s *Snapshot) SetIdentity(id egress.Identity) (previous egress.Identity, ha
 		return egress.Identity{}, false
 	}
 	previous, had = rs.id, rs.hasID
-	rs.id, rs.hasID = id, true
+	rs.id, rs.idAt, rs.hasID = id, at, true
 	return previous, had
 }
 
@@ -130,6 +132,7 @@ func (s *Snapshot) SetEntry(config string, up bool, rtt time.Duration) {
 func collectReachability(ch chan<- prometheus.Metric, rs *reachabilityState) {
 	if rs.hasID {
 		ch <- prometheus.MustNewConstMetric(networkInfo.desc, prometheus.GaugeValue, 1, rs.id.ASName, rs.id.Country)
+		ch <- prometheus.MustNewConstMetric(networkTimestamp.desc, prometheus.GaugeValue, unixSeconds(rs.idAt))
 	}
 	for _, key := range sortedKeys(rs.controls) {
 		state := rs.controls[key]
