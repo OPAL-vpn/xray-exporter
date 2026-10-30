@@ -18,8 +18,9 @@ The "API" of a long-running exporter is what operators and dashboards depend on:
 - environment variables and their defaults, as listed in the README's
   configuration table
 - the `xray-exporter-config.yml` schema: `dns_probe_domain`, `dns_upstream`,
-  `targets[].host`, `dns_resolvers[].name` with `doh_url` or `dot_host`, and
-  `xray_config_source` with `type`, `path`, `url` and `refresh`
+  `targets[].host`, `dns_resolvers[].name` with `doh_url` or `dot_host`,
+  `xray_config_source` with `type`, `path`, `url` and `refresh`, and
+  `reachability` with `controls` and `entry_tcp`
 - CLI flags (`--once`, `--out`, `--deadline`, `--version`) and the shape of the
   `--once` report
 - the image name `ghcr.io/opal-vpn/xray-exporter`, its tag scheme, and the
@@ -44,7 +45,7 @@ in a series that was silently missing is PATCH.
 
 ## Before 1.0.0
 
-The project is at `v0.4.0`. SemVer §4 applies: in `0.y.z` anything may change
+The project is at `v0.5.0`. SemVer §4 applies: in `0.y.z` anything may change
 and a MINOR bump may carry a breaking change. Here that means a `0.y.0` may
 rename a metric, a label or an env var, and the tag annotation says what broke.
 
