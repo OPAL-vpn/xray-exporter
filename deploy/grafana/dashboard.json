@@ -116,6 +116,208 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "Age of the last completed cycle per node. Yellow at 15m, red at 30m. A flat latency line with a stale cycle means the exporter stalled.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 4,
+        "y": 1
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (instance) (time() - xray_cycle_timestamp_seconds{instance=~\"$instance\",config=~\"$config\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Cycle age",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Age of the last successful config-source fetch per node. The URL source refreshes every 5m (yellow at 15m, red at 30m); the directory source fetches only at startup and SIGHUP.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 14,
+        "y": 1
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (instance) (time() - xray_exporter_config_fetch_timestamp_seconds{instance=~\"$instance\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Config fetch age",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Share of tunnel DNS lookups that answered, averaged over 15m. Address-literal targets have no DNS series.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "min"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance, config) (avg_over_time(xray_dns_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}[15m]))",
+          "refId": "A",
+          "legendFormat": "{{instance}} {{config}}"
+        }
+      ],
+      "title": "Tunnel DNS up ratio 15m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -143,8 +345,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 18,
-        "w": 24,
+        "h": 12,
+        "w": 12,
         "x": 0,
         "y": 7
       },
@@ -169,7 +371,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg by (instance, config) (avg_over_time(xray_probe_up{instance=~\"$instance\",config=~\"$config\"}[15m]))",
+          "expr": "avg by (instance, config) (avg_over_time(xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}[15m]))",
           "refId": "A",
           "legendFormat": "{{instance}} {{config}}"
         }
@@ -183,7 +385,359 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 19
+      },
+      "panels": [],
+      "title": "Performance",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Mean over the selected targets and configs, per node. Raw per-target series remain below. Last successful values only; read with the success ratio above.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance) (xray_probe_ttfb_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "title": "TTFB: average per node",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Mean over the selected targets and configs, per node. Raw per-target series remain below. Last successful values only; read with the success ratio above.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance) (xray_dns_lookup_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "title": "DNS lookup: average per node",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Mean over the selected targets and configs, per node. Raw per-target series remain below. Last successful values only; read with the success ratio above.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance) (xray_probe_total_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "title": "Total request: average per node",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Tunnel DNS round trip as a share of TTFB. Rising means name resolution, not transfer, is degrading. Address-literal targets have no DNS series and skew the ratio low.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance) (xray_dns_lookup_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}) / avg by (instance) (xray_probe_ttfb_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "title": "DNS share of TTFB",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Total request time minus TTFB: time spent receiving the body, averaged per node.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (instance) (xray_probe_total_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"} - xray_probe_ttfb_seconds{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"})",
+          "refId": "A",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "title": "Body transfer: average per node",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
       },
       "panels": [],
       "title": "Reachability",
@@ -211,7 +765,7 @@
         "h": 18,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 43
       },
       "options": {
         "cellHeight": "sm",
@@ -292,7 +846,7 @@
         "h": 18,
         "w": 12,
         "x": 0,
-        "y": 44
+        "y": 61
       },
       "options": {
         "legend": {
@@ -360,7 +914,7 @@
         "h": 18,
         "w": 12,
         "x": 12,
-        "y": 44
+        "y": 61
       },
       "options": {
         "legend": {
@@ -445,7 +999,7 @@
         "h": 24,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 79
       },
       "options": {
         "legend": {
@@ -525,7 +1079,7 @@
         "h": 24,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 79
       },
       "options": {
         "legend": {
@@ -558,7 +1112,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 103
       },
       "panels": [],
       "title": "Targets",
@@ -660,7 +1214,7 @@
         "h": 18,
         "w": 24,
         "x": 0,
-        "y": 87
+        "y": 104
       },
       "options": {
         "cellHeight": "sm",
@@ -787,7 +1341,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 105
+        "y": 122
       },
       "options": {
         "cellHeight": "sm",
@@ -871,6 +1425,177 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "One row per instance, config and target whose probe failed at least once in the selected time range. Red means the last probe got no HTTP response, green means the target answered. Only probes that failed get a row, so the panel stays focused on outages; an empty panel means nothing failed in this range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Up"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 130
+      },
+      "interval": "1m",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "perPage": 20,
+        "rowHeight": 0.9,
+        "showValue": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (instance, config, target) (xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}) and on (instance, config, target) (min_over_time(xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}[$__range] @ end()) == 0)",
+          "legendFormat": "{{target}} · {{instance}} · {{config}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Failing targets timeline",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "HTTP status of the last probe. 0 means no response; 2xx green, 3xx blue, 4xx orange, 5xx red.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "no response"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 200
+              },
+              {
+                "color": "blue",
+                "value": 300
+              },
+              {
+                "color": "orange",
+                "value": 400
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 142
+      },
+      "interval": "1m",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "perPage": 20,
+        "rowHeight": 0.9,
+        "showValue": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "xray_probe_http_status{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}",
+          "legendFormat": "{{target}} · {{instance}} · {{config}}",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP status",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -901,7 +1626,7 @@
         "h": 21,
         "w": 8,
         "x": 0,
-        "y": 113
+        "y": 154
       },
       "options": {
         "legend": {
@@ -968,7 +1693,7 @@
         "h": 21,
         "w": 8,
         "x": 8,
-        "y": 113
+        "y": 154
       },
       "options": {
         "legend": {
@@ -1035,7 +1760,7 @@
         "h": 21,
         "w": 8,
         "x": 16,
-        "y": 113
+        "y": 154
       },
       "options": {
         "legend": {
@@ -1073,7 +1798,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 134
+        "y": 175
       },
       "panels": [],
       "title": "Resolvers",
@@ -1175,7 +1900,7 @@
         "h": 15,
         "w": 12,
         "x": 0,
-        "y": 135
+        "y": 176
       },
       "options": {
         "cellHeight": "sm",
@@ -1277,7 +2002,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 150
+        "y": 191
       },
       "options": {
         "cellHeight": "sm",
@@ -1362,7 +2087,7 @@
         "h": 21,
         "w": 12,
         "x": 12,
-        "y": 135
+        "y": 176
       },
       "options": {
         "legend": {
@@ -1400,7 +2125,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 156
+        "y": 197
       },
       "panels": [],
       "title": "Config",
@@ -1445,7 +2170,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 157
+        "y": 198
       },
       "options": {
         "cellHeight": "sm",
