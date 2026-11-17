@@ -11,12 +11,15 @@ import (
 const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
 // HTTPClient returns the shared client: connections go through d, keep-alives
-// and redirects are off, and roots override the system pool. The certificate is
-// verified against the URL host, because an address literal sends no SNI.
+// and redirects are off, HTTP/2 is attempted, and roots override the system
+// pool. HTTP/2 needs the explicit flag: a custom dialer leaves the transport on
+// HTTP/1.1 otherwise. The certificate is verified against the URL host, because
+// an address literal sends no SNI.
 func HTTPClient(d Dialer, timeout time.Duration, roots *x509.CertPool) *http.Client {
 	transport := &http.Transport{
 		DialContext:       d.DialContext,
 		DisableKeepAlives: true,
+		ForceAttemptHTTP2: true,
 		TLSClientConfig:   &tls.Config{RootCAs: roots},
 	}
 
