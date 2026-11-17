@@ -186,6 +186,28 @@ func qualityExport() metrics.Export {
 				Result:   probe.UDPResult{Sent: 10, Err: errors.New("timeout")},
 			},
 			{Target: "u2", Load: "idle", Measured: false},
+			{
+				Target:   "u3",
+				Load:     "idle",
+				Measured: true,
+				Result: probe.UDPResult{
+					Up:      true,
+					Sent:    3,
+					Replies: 2,
+					Median:  10 * time.Millisecond,
+				},
+			},
+			{
+				Target:   "u4",
+				Load:     "idle",
+				Measured: true,
+				Result: probe.UDPResult{
+					Up:      true,
+					Sent:    4,
+					Replies: 4,
+					Median:  10 * time.Millisecond,
+				},
+			},
 		},
 		TCPs: []metrics.TCPExport{
 			{Target: "t1", Measured: true, Result: probe.TunnelTCPResult{Up: true, Connect: 20 * time.Millisecond}},
@@ -218,6 +240,16 @@ func TestRenderUDPTable(t *testing.T) {
 	unmeasured := rowFields(t, out, "u2", "idle")
 	if want := []string{"u2", "idle", "-", "-", "-", "-", "-", "-"}; !slices.Equal(unmeasured, want) {
 		t.Errorf("u2 idle row = %v, want every measurement cell absent", unmeasured)
+	}
+
+	rounded := rowFields(t, out, "u3", "idle")
+	if want := []string{"u3", "idle", "up", "33.3%", "10.00ms", "0.00ms", "0.00ms", "0"}; !slices.Equal(rounded, want) {
+		t.Errorf("u3 idle row = %v, want the loss rounded to one decimal", rounded)
+	}
+
+	clean := rowFields(t, out, "u4", "idle")
+	if want := []string{"u4", "idle", "up", "0.0%", "10.00ms", "0.00ms", "0.00ms", "0"}; !slices.Equal(clean, want) {
+		t.Errorf("u4 idle row = %v, want the clean loss case at 0.0%%", clean)
 	}
 }
 
@@ -257,6 +289,16 @@ func TestRenderSkipsEmptyQualityTables(t *testing.T) {
 	udpOnly.Configs[0].TCPs = nil
 	if out := render(t, udpOnly); strings.Contains(out, "tcp target") {
 		t.Errorf("report without TCP targets renders the tcp table:\n%s", out)
+	}
+
+	tcpOnly := qualityExport()
+	tcpOnly.Configs[0].UDPs = nil
+	out = render(t, tcpOnly)
+	if strings.Contains(out, "udp target") {
+		t.Errorf("report without UDP targets renders the udp table:\n%s", out)
+	}
+	if !strings.Contains(out, "tcp target") {
+		t.Errorf("report with TCP targets lacks the tcp table:\n%s", out)
 	}
 }
 
