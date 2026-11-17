@@ -17,6 +17,11 @@ see [Config sources](#config-sources)), once per `INTERVAL` (default 5 min):
   `dokodemo-door` inbound forwarded to `dns_upstream`. Up means any DNS response.
 - **DoH and DoT through the tunnel**, for each configured resolver transport:
   can this tunnel carry encrypted DNS.
+- **UDP quality through the tunnel**, with `udp_targets`: a burst of STUN
+  binding requests to each target — loss, median and maximum RTT, jitter — and,
+  with `udp_under_load`, the same burst while a download saturates the tunnel.
+- **TCP connects through the tunnel**, with `tcp_targets`: a plain CONNECT to
+  each host:port, for apps that are neither HTTP nor DNS.
 - **Controls**, once per cycle: an `https` GET, a `tcp` connect or a `dns`
   lookup on each named host.
 - **Entry connects**, with `entry_tcp`: a direct TCP connect to the first
@@ -83,7 +88,7 @@ sets.
 | `EXPORTER_CONFIG_FILE` | `/config/xray-exporter-config.yml` | targets, resolvers and the config source |
 | `INTERVAL` | `5m` | cycle period |
 | `WORKERS` | `8` | concurrent probes per config |
-| `PROBE_TIMEOUT` | `10s` | per HTTP/DNS probe |
+| `PROBE_TIMEOUT` | `10s` | per HTTP/DNS/UDP/TCP probe; a UDP target's `timeout` overrides it |
 | `RESOLVER_TIMEOUT` | `5s` | per DoH/DoT probe |
 | `CONTROL_TIMEOUT` | `5s` | per direct [reachability](#reachability) probe, controls and entry connects |
 | `XRAY_LOG_LEVEL` | `warning` | xray's own verbosity |
@@ -135,6 +140,103 @@ previous set, counts a reload error and increments
 authoritative and stops every config. Its reload errors keep their old meaning:
 a config that fails to start makes the reload an error.
 
+## UDP quality targets
+
+Three optional blocks measure UDP and plain TCP through each tunnel. Absent,
+nothing is measured, like the reachability block.
+
+```yaml
+udp_targets:
+  - name: tg-stun-1
+    kind: stun
+    addr: "203.0.113.10:3478"   # a Telegram call endpoint, or any STUN server
+    count: 20                   # default
+    spacing: 100ms              # default
+    timeout: 15s                # default PROBE_TIMEOUT
+tcp_targets:
+  - name: mtproto-dc4
+    addr: "203.0.113.20:443"
+udp_under_load:                 # adds the loaded pass
+  url: https://mirror.example.com/20mb.bin
+```
+
+A UDP target is a burst of `count` STUN binding requests `spacing` apart,
+through the config's own socks inbound (SOCKS5 UDP ASSOCIATE, so XUDP for the
+stream protocols) — the first packet pattern of a Telegram call. `kind` is
+`stun`; any binding reply carrying the burst's transaction id counts, success
+or error, so Telegram's TURN servers, which answer binding requests
+unauthenticated, are valid targets. `tcp_targets` are plain CONNECTs through the
+same tunnel, for non-HTTP TCP apps. `name` is the `target` label, so names must
+be unique across both blocks.
+
+`count` is 1–1000 (0 means the default 20) and `spacing` 1 ms–1 s. `count ×
+spacing` must stay below the target's `timeout`: the timeout bounds the whole
+burst, send plus collection, as every other probe's timeout does, and a burst
+the cycle deadline cuts is discarded rather than published with a truncated
+denominator. The whole cycle has to fit `INTERVAL/2`: every burst, the doubled
+loaded pass when `udp_under_load` is set, and everything else. The defaults — a
+2 s burst — leave wide margins at `INTERVAL 5m`, while a `PROBE_TIMEOUT`
+shorter than a target's burst makes that target time out every cycle. Probes
+are cycle-bound like the rest: one sample per config and target per `INTERVAL`,
+so minutes-scale degradation shows as a run of degraded samples.
+
+### Where the targets come from
+
+Telegram's STUN/TURN endpoints are per-call and ephemeral, so the exporter never
+fetches them: extract them once and pin them as targets.
+
+1. **MTProto one-liner** — with any account (e.g. Telethon), call
+   `phone.getCallConfig` (deprecated but live) and read `stun_servers` and
+   `turn_servers[].uris`. TURN credentials are per-call and unusable here, but
+   the hosts still answer STUN binding.
+2. **Capture a real call** — tdesktop's debug log, or Wireshark on the client,
+   shows the UDP endpoints the call used; they are stable enough across calls to
+   pin.
+3. **Public STUN fallback** — any public STUN server
+   (`stun.cloudflare.com:3478`, `stun.l.google.com:19302`) measures the same
+   axes against a third party.
+
+Same servers, same packet type, same tunnel path as a real call, without
+impersonating a subscriber. It is also the reliability model: a Telegram
+endpoint that goes away is a fact real calls share, so it reads as signal
+rather than as a broken probe. A target that persistently fails while other UDP
+targets on the same config answer is a target problem; every target failing
+while `xray_dns_up` is 1 is the tunnel.
+
+### The under-load pass
+
+`udp_under_load` probes every UDP target twice per cycle: the idle burst, then
+the same burst while a bulk HTTPS GET of `url` runs through the same tunnel. The
+GET starts before the burst, is cancelled when the burst completes and restarts
+whenever it finishes early, so bytes flow for the whole burst; each loaded burst
+owns its download. Traffic cost is burst duration × achievable rate per target
+per cycle, not file size, so point `url` at a moderate file you are entitled to
+fetch repeatedly. The loaded series is labelled `load="loaded"`; without the
+block only `idle` series exist.
+
+`url` must be absolute `http(s)` and must point at the file itself: the
+exporter's HTTP client does not follow redirects, so a redirecting link fails as
+a non-2xx. A loaded pass whose download moved zero bytes is discarded — the
+previous loaded sample and its timestamp stay, so staleness stays visible — and
+`xray_udp_load_up` goes to 0. That gauge is generator health, not tunnel health:
+the idle series never depend on the URL.
+
+### Reading the numbers
+
+- `xray_dns_up` 1 with `xray_udp_up` 0 — the server egress passes port-53 UDP
+  and drops the rest: calls and Factorio dead while browsing is fine.
+- `xray_udp_loss_ratio` above ~1–2 % or `xray_udp_jitter_seconds` above ~30 ms —
+  call quality audibly degrades and Factorio input delays; look at the server
+  egress and the carrier path.
+- `xray_udp_rtt_max_seconds` far above `xray_udp_rtt_seconds` with low loss —
+  the XUDP stall signature, carrier TCP retransmit pauses: rubber-banding.
+- Idle/loaded divergence — RTT or jitter degrading only at `load="loaded"` —
+  congestion or QoS collapse under load, not a routing fault; compare across
+  configs to find which tunnel holds up.
+- The burst follows the config's own routing rules, so a config that steers UDP
+  differently from HTTPS measures its real user path. That is the point, but it
+  is a per-config property, not a measurement error.
+
 ## Metrics
 
 Namespace `xray_`. Identity of the vantage point comes from Prometheus
@@ -172,6 +274,15 @@ self-labelling.
 | `xray_control_seconds` | kind, name, class | last successful round trip |
 | `xray_entry_tcp_up` | config | direct connect to the config's entry succeeded |
 | `xray_entry_tcp_seconds` | config | last successful connect time |
+| `xray_udp_up` | config, target, load | a matching reply arrived |
+| `xray_udp_loss_ratio` | config, target, load | share of datagrams lost, 0..1 |
+| `xray_udp_rtt_seconds` | config, target, load | median RTT |
+| `xray_udp_rtt_max_seconds` | config, target, load | maximum RTT |
+| `xray_udp_jitter_seconds` | config, target, load | mean absolute RTT change |
+| `xray_udp_timestamp_seconds` | config, target, load | last completed burst |
+| `xray_tcp_up` | config, target | tunnel CONNECT succeeded |
+| `xray_tcp_seconds` | config, target | last successful connect time |
+| `xray_udp_load_up` | config | the under-load download moved bytes; absent until the first loaded pass |
 
 Every expected series exists from the first scrape with `up` at 0. Latency
 series appear only after a success — a 0 would chart as infinitely fast and
@@ -184,7 +295,9 @@ timestamp. Series disappear only with their config or target.
 `deploy/grafana/dashboard.json` imports as-is into any Grafana with a Prometheus
 datasource: every panel reads a `datasource` variable, so no UID is baked in. It
 ships `instance` → `config` → `target` variables, all multi-select with `All` as
-the default. See `deploy/grafana/README.md`.
+the default, plus a `udp_target` variable for the UDP quality row — UDP target
+names would otherwise pollute the HTTPS target list. See
+`deploy/grafana/README.md`.
 
 ## Licence
 

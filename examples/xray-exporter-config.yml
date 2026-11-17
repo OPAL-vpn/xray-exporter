@@ -30,3 +30,21 @@ dns_resolvers:
 #     tcp:
 #       - { name: cf, addr: "1.1.1.1:443", class: foreign }
 #   entry_tcp: true
+
+# Omit these blocks to probe no UDP or plain TCP targets. `name` is the target
+# label, so names must be unique across both blocks.
+# udp_targets:
+#   - name: tg-stun-1
+#     kind: stun
+#     addr: "203.0.113.10:3478"   # a Telegram call endpoint, or any STUN server
+#     count: 20                   # default; 1..1000, 0 means the default
+#     spacing: 100ms              # default; 1ms..1s
+#     timeout: 15s                # default PROBE_TIMEOUT; must exceed count x spacing
+# tcp_targets:
+#   - name: mtproto-dc4
+#     addr: "203.0.113.20:443"
+
+# Omit this block to probe only the idle pass. The URL must be the file itself:
+# the exporter does not follow redirects.
+# udp_under_load:
+#   url: https://mirror.example.com/20mb.bin
