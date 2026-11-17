@@ -608,6 +608,16 @@ func TestReloadRemnawaveFetchFailureKeepsPrevious(t *testing.T) {
 		t.Fatal("the startup fetch has no timestamp")
 	}
 
+	// The fixture starts no cycle, so a nil cancel here is what makes the non-nil
+	// one after the reload this reload's cycle: interruptCycle never clears
+	// a.cancel, so a stale value would survive a missing start.
+	a.cancelMu.Lock()
+	before := a.cancel
+	a.cancelMu.Unlock()
+	if before != nil {
+		t.Fatal("the fixture started a cycle, want none before the reload")
+	}
+
 	p.set(http.StatusInternalServerError, "")
 	a.reload(context.Background())
 
@@ -630,6 +640,8 @@ func TestReloadRemnawaveFetchFailureKeepsPrevious(t *testing.T) {
 		t.Errorf("fetch timestamp = %v (present %v), want the previous success %v", got, ok, fetchedAt)
 	}
 	// The kept set is still running, so the deferred start must resume the cycle.
+	// Func values are not comparable, so the nil premise captured above is what
+	// turns this into "a.cancel changed": a missing start would leave it nil.
 	a.cancelMu.Lock()
 	cancel := a.cancel
 	a.cancelMu.Unlock()
@@ -1406,8 +1418,21 @@ func TestReloadFetchFailureReappliesKeptConfigsOnNewManager(t *testing.T) {
 		t.Fatalf("write exporter config: %v", err)
 	}
 
+	a.mu.RLock()
+	manager := a.manager
+	a.mu.RUnlock()
+
 	p.set(http.StatusInternalServerError, "")
 	a.reload(context.Background())
+
+	// The re-apply branch only runs on a replaced manager, so the premise is
+	// asserted rather than assumed from the fixture's upstream.
+	a.mu.RLock()
+	replaced := a.manager
+	a.mu.RUnlock()
+	if replaced == manager {
+		t.Fatal("the reload kept the manager, want a new one so the re-apply branch runs")
+	}
 
 	if got := len(a.instances()); got != 1 {
 		t.Errorf("instances = %d, want the kept config started on the new manager", got)
