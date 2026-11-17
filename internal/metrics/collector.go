@@ -99,6 +99,44 @@ func collectConfig(ch chan<- prometheus.Metric, name string, cfg *configState) {
 		}
 		ch <- prometheus.MustNewConstMetric(resolverTimestamp.desc, prometheus.GaugeValue, unixSeconds(state.at), labels...)
 	}
+
+	for _, key := range sortedUDPKeys(cfg.udps) {
+		collectUDP(ch, name, key, cfg.udps[key])
+	}
+	for _, target := range sortedKeys(cfg.tcps) {
+		collectTCP(ch, name, target, cfg.tcps[target])
+	}
+	if cfg.udpLoad != nil {
+		ch <- prometheus.MustNewConstMetric(udpLoadUp.desc, prometheus.GaugeValue, boolValue(cfg.udpLoad.up), name)
+	}
+}
+
+func collectUDP(ch chan<- prometheus.Metric, config string, key udpKey, state *udpState) {
+	labels := []string{config, key.target, key.load}
+
+	ch <- prometheus.MustNewConstMetric(udpUp.desc, prometheus.GaugeValue, boolValue(state.result.Up), labels...)
+	if state.loss != nil {
+		ch <- prometheus.MustNewConstMetric(udpLossRatio.desc, prometheus.GaugeValue, *state.loss, labels...)
+	}
+	if state.rtt != nil {
+		ch <- prometheus.MustNewConstMetric(udpRTT.desc, prometheus.GaugeValue, *state.rtt, labels...)
+	}
+	if state.rttMax != nil {
+		ch <- prometheus.MustNewConstMetric(udpRTTMax.desc, prometheus.GaugeValue, *state.rttMax, labels...)
+	}
+	if state.jitter != nil {
+		ch <- prometheus.MustNewConstMetric(udpJitter.desc, prometheus.GaugeValue, *state.jitter, labels...)
+	}
+	ch <- prometheus.MustNewConstMetric(udpTimestamp.desc, prometheus.GaugeValue, unixSeconds(state.at), labels...)
+}
+
+func collectTCP(ch chan<- prometheus.Metric, config, target string, state *tcpState) {
+	labels := []string{config, target}
+
+	ch <- prometheus.MustNewConstMetric(tcpUp.desc, prometheus.GaugeValue, boolValue(state.result.Up), labels...)
+	if state.connect != nil {
+		ch <- prometheus.MustNewConstMetric(tcpSeconds.desc, prometheus.GaugeValue, *state.connect, labels...)
+	}
 }
 
 func collectTarget(ch chan<- prometheus.Metric, config, target string, t *targetState) {
@@ -133,6 +171,21 @@ func boolValue(v bool) float64 {
 
 func unixSeconds(t time.Time) float64 {
 	return float64(t.UnixNano()) / 1e9
+}
+
+// sortedUDPKeys keeps a scrape stable: target name, then load.
+func sortedUDPKeys(m map[udpKey]*udpState) []udpKey {
+	keys := make([]udpKey, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].target != keys[j].target {
+			return keys[i].target < keys[j].target
+		}
+		return keys[i].load < keys[j].load
+	})
+	return keys
 }
 
 // sortedKeys keeps a scrape stable.

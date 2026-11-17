@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
+	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/xraycfg"
 	"github.com/OPAL-vpn/xray-exporter/internal/xrayproc"
 )
@@ -29,8 +30,11 @@ func (a *application) apply(cfgs []xraycfg.Config) (started, stopped []string, o
 	return started, stopped, len(errs) == 0
 }
 
-// declared returns the hosts and the resolvers every config's series carries.
-func (a *application) declared() (hosts []string, resolvers []config.Resolver) {
+// declared returns the entities every config's series carries: the hosts, the
+// resolvers, the UDP and TCP targets, and the UDP load passes to declare. The
+// loads drive both the seeding and the sampler's writes, so they come from the
+// shared metrics constants.
+func (a *application) declared() (hosts []string, resolvers []config.Resolver, udpTargets []config.UDPTarget, tcpTargets []config.TCPTarget, loads []string) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -39,13 +43,17 @@ func (a *application) declared() (hosts []string, resolvers []config.Resolver) {
 	for i, target := range exporterConfig.Targets {
 		hosts[i] = target.Host
 	}
-	return hosts, exporterConfig.Resolvers
+	loads = []string{metrics.LoadIdle}
+	if exporterConfig.UDPUnderLoad != nil {
+		loads = append(loads, metrics.LoadLoaded)
+	}
+	return hosts, exporterConfig.Resolvers, exporterConfig.UDPTargets, exporterConfig.TCPTargets, loads
 }
 
 // seed declares every config and its entities. Failed starts stay declared with
 // running=0, and configs removed from the set lose their series.
 func (a *application) seed(now time.Time) {
-	hosts, resolvers := a.declared()
+	hosts, resolvers, udpTargets, tcpTargets, loads := a.declared()
 	a.recordEntries(a.configs)
 
 	running := make(map[string]string, len(a.configs))
@@ -57,6 +65,8 @@ func (a *application) seed(now time.Time) {
 	for _, cfg := range a.configs {
 		keep[cfg.Name] = struct{}{}
 		a.snap.Seed(cfg.Name, hosts, resolvers, now)
+		a.snap.SeedUDP(cfg.Name, udpTargets, loads, now)
+		a.snap.SeedTCP(cfg.Name, tcpTargets)
 	}
 	for name, version := range running {
 		a.snap.SetConfig(name, true, version)

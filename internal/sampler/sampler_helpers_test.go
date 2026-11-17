@@ -27,6 +27,19 @@ type resolverCall struct {
 	domain string
 }
 
+type stunCall struct {
+	socksAddr string
+	target    string
+	count     int
+	spacing   time.Duration
+	timeout   time.Duration
+}
+
+type tcpCall struct {
+	addr    string
+	timeout time.Duration
+}
+
 // fakeProbers records probes and answers after an optional ctx-aware delay.
 type fakeProbers struct {
 	mu sync.Mutex
@@ -36,21 +49,98 @@ type fakeProbers struct {
 	dohCalls  []resolverCall
 	dotCalls  []resolverCall
 
+	stunCalls     []stunCall
+	tcpCalls      []tcpCall
+	downloadCalls []string
+
 	httpDialers     []probe.Dialer
 	resolverDialers []probe.Dialer
 
 	httpResult     probe.HTTPResult
 	dnsResult      probe.DNSResult
 	resolverResult probe.ResolverResult
+	stunResult     probe.UDPResult
+	tcpResult      probe.TunnelTCPResult
+	downloadBytes  int64
+	downloadErr    error
 	httpDelay      time.Duration
 	dnsDelay       time.Duration
+	stunBlock      bool
 
 	inflight    int32
 	maxInflight int32
 }
 
 func (f *fakeProbers) probers() Probers {
-	return Probers{HTTP: f.http, DNS: f.dns, DoH: f.doh, DoT: f.dot}
+	return Probers{
+		HTTP:     f.http,
+		DNS:      f.dns,
+		DoH:      f.doh,
+		DoT:      f.dot,
+		STUN:     f.stun,
+		TCP:      f.tcp,
+		Download: f.download,
+	}
+}
+
+// stun answers after an optional wait for ctx to end, standing in for a burst
+// the cycle deadline cuts.
+func (f *fakeProbers) stun(ctx context.Context, socksAddr, target string, count int, spacing, timeout time.Duration) probe.UDPResult {
+	f.enter()
+	defer f.leave()
+
+	f.mu.Lock()
+	f.stunCalls = append(f.stunCalls, stunCall{socksAddr: socksAddr, target: target, count: count, spacing: spacing, timeout: timeout})
+	block, result := f.stunBlock, f.stunResult
+	f.mu.Unlock()
+
+	if block {
+		<-ctx.Done()
+		return probe.UDPResult{Err: ctx.Err()}
+	}
+	return result
+}
+
+func (f *fakeProbers) tcp(ctx context.Context, _ probe.Dialer, addr string, timeout time.Duration) probe.TunnelTCPResult {
+	f.enter()
+	defer f.leave()
+
+	f.mu.Lock()
+	f.tcpCalls = append(f.tcpCalls, tcpCall{addr: addr, timeout: timeout})
+	result := f.tcpResult
+	f.mu.Unlock()
+
+	return result
+}
+
+func (f *fakeProbers) download(ctx context.Context, _ probe.Dialer, url string) (int64, error) {
+	f.enter()
+	defer f.leave()
+
+	f.mu.Lock()
+	f.downloadCalls = append(f.downloadCalls, url)
+	n, err := f.downloadBytes, f.downloadErr
+	f.mu.Unlock()
+
+	return n, err
+}
+
+func (f *fakeProbers) stunCallsSnapshot() []stunCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]stunCall(nil), f.stunCalls...)
+}
+
+func (f *fakeProbers) tcpCallsSnapshot() []tcpCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]tcpCall(nil), f.tcpCalls...)
+}
+
+func (f *fakeProbers) downloadCallsSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.downloadCalls...)
 }
 
 func (f *fakeProbers) http(ctx context.Context, d probe.Dialer, host string, _ time.Duration, _ *x509.CertPool) probe.HTTPResult {

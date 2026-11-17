@@ -21,6 +21,10 @@ type ConfigExport struct {
 	Cycle       CycleExport
 	Targets     []TargetExport
 	Resolvers   []ResolverExport
+	UDPs        []UDPExport
+	TCPs        []TCPExport
+	// LoadUp is nil until a loaded pass has reported, or when under-load is off.
+	LoadUp *bool
 	// Entry is nil until a direct connect ran or when entry_tcp is off.
 	Entry *EntryExport
 }
@@ -52,6 +56,24 @@ type TransportExport struct {
 	Result    probe.ResolverResult
 }
 
+// UDPExport keeps the raw burst result for one target and load pass. Measured
+// is false for a row that was seeded but never probed, whose zero Result is not
+// a failure.
+type UDPExport struct {
+	Target   string
+	Load     string
+	Measured bool
+	Result   probe.UDPResult
+}
+
+// TCPExport keeps the raw tunnel connect result for one target. Measured is
+// false for a seeded row that was never probed.
+type TCPExport struct {
+	Target   string
+	Measured bool
+	Result   probe.TunnelTCPResult
+}
+
 // Export copies the snapshot under a read lock.
 func (s *Snapshot) Export() Export {
 	s.mu.RLock()
@@ -77,6 +99,13 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		},
 		Targets:   make([]TargetExport, 0, len(cfg.targets)),
 		Resolvers: make([]ResolverExport, 0),
+		UDPs:      make([]UDPExport, 0, len(cfg.udps)),
+		TCPs:      make([]TCPExport, 0, len(cfg.tcps)),
+	}
+
+	if cfg.udpLoad != nil {
+		loadUp := cfg.udpLoad.up
+		row.LoadUp = &loadUp
 	}
 
 	if cfg.entry != nil {
@@ -105,6 +134,15 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		transports := resolvers[resolver]
 		sort.Slice(transports, func(i, j int) bool { return transports[i].Transport < transports[j].Transport })
 		row.Resolvers = append(row.Resolvers, ResolverExport{Name: resolver, Transports: transports})
+	}
+
+	for _, key := range sortedUDPKeys(cfg.udps) {
+		state := cfg.udps[key]
+		row.UDPs = append(row.UDPs, UDPExport{Target: key.target, Load: key.load, Measured: state.measured, Result: state.result})
+	}
+	for _, target := range sortedKeys(cfg.tcps) {
+		state := cfg.tcps[target]
+		row.TCPs = append(row.TCPs, TCPExport{Target: target, Measured: state.measured, Result: state.result})
 	}
 
 	return row

@@ -69,20 +69,80 @@ func renderConfig(r *renderer, cfg metrics.ConfigExport) {
 		}
 	})
 
-	if len(cfg.Resolvers) == 0 {
+	if len(cfg.Resolvers) > 0 {
+		r.table(func(t *renderer) {
+			t.printf("resolver\tdoh\tdot\n")
+			for _, resolver := range cfg.Resolvers {
+				transports := make(map[string]string, len(resolver.Transports))
+				for _, transport := range resolver.Transports {
+					transports[transport.Transport] = resultCell(transport.Result)
+				}
+				t.printf("%s\t%s\t%s\n",
+					resolver.Name, orAbsent(transports[metrics.TransportDoH]), orAbsent(transports[metrics.TransportDoT]))
+			}
+		})
+	}
+
+	renderUDP(r, cfg.UDPs)
+	renderTCP(r, cfg.TCPs)
+}
+
+// renderUDP prints one row per target and load pass. A row that was never
+// probed has every measurement cell absent: an unmeasured probe is not a
+// failure.
+func renderUDP(r *renderer, rows []metrics.UDPExport) {
+	if len(rows) == 0 {
 		return
 	}
 	r.table(func(t *renderer) {
-		t.printf("resolver\tdoh\tdot\n")
-		for _, resolver := range cfg.Resolvers {
-			transports := make(map[string]string, len(resolver.Transports))
-			for _, transport := range resolver.Transports {
-				transports[transport.Transport] = resultCell(transport.Result)
-			}
-			t.printf("%s\t%s\t%s\n",
-				resolver.Name, orAbsent(transports[metrics.TransportDoH]), orAbsent(transports[metrics.TransportDoT]))
+		t.printf("udp target\tload\tup\tloss\trtt\trtt max\tjitter\treord\n")
+		for _, row := range rows {
+			t.printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				row.Target, row.Load,
+				measuredUpCell(row.Measured, row.Result.Up),
+				udpLossCell(row),
+				durationCell(udpHasNumbers(row), row.Result.Median),
+				durationCell(udpHasNumbers(row), row.Result.Max),
+				durationCell(udpHasNumbers(row), row.Result.Jitter),
+				udpReorderedCell(row))
 		}
 	})
+}
+
+// renderTCP prints one row per tunnel target.
+func renderTCP(r *renderer, rows []metrics.TCPExport) {
+	if len(rows) == 0 {
+		return
+	}
+	r.table(func(t *renderer) {
+		t.printf("tcp target\tup\tconnect\n")
+		for _, row := range rows {
+			t.printf("%s\t%s\t%s\n",
+				row.Target,
+				measuredUpCell(row.Measured, row.Result.Up),
+				durationCell(row.Measured && row.Result.Up, row.Result.Connect))
+		}
+	})
+}
+
+// udpHasNumbers reports whether row carries loss and latency numbers: only a
+// probe that ran and was answered has them.
+func udpHasNumbers(row metrics.UDPExport) bool {
+	return row.Measured && row.Result.Up
+}
+
+func udpLossCell(row metrics.UDPExport) string {
+	if !udpHasNumbers(row) || row.Result.Sent <= 0 {
+		return absent
+	}
+	return fmt.Sprintf("%.1f%%", 100*float64(row.Result.Sent-row.Result.Replies)/float64(row.Result.Sent))
+}
+
+func udpReorderedCell(row metrics.UDPExport) string {
+	if !udpHasNumbers(row) {
+		return absent
+	}
+	return strconv.Itoa(row.Result.Reordered)
 }
 
 // renderReachability prints the egress network and the controls.
@@ -112,6 +172,15 @@ func upCell(up bool) string {
 		return "up"
 	}
 	return "fail"
+}
+
+// measuredUpCell is upCell for a row that may never have been probed: an
+// unmeasured row is absent, not a failure.
+func measuredUpCell(measured, up bool) string {
+	if !measured {
+		return absent
+	}
+	return upCell(up)
 }
 
 func statusCell(t metrics.TargetExport) string {
@@ -172,6 +241,15 @@ func resultCell(r probe.ResolverResult) string {
 
 func seconds(d time.Duration) string {
 	return fmt.Sprintf("%.2fs", float64(d.Milliseconds())/1000)
+}
+
+// durationCell renders d in milliseconds, the unit the quality probes report
+// in, or absent when the row has no measurement to show.
+func durationCell(measured bool, d time.Duration) string {
+	if !measured {
+		return absent
+	}
+	return fmt.Sprintf("%.2fms", float64(d)/float64(time.Millisecond))
 }
 
 func orAbsent(value string) string {

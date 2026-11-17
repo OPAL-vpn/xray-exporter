@@ -294,14 +294,19 @@ targets:
 	}
 }
 
-// sourceYAML expands an unindented block body into an xray_config_source block.
-func sourceYAML(body string) string {
+// blockYAML expands an unindented block body into a top-level YAML block.
+func blockYAML(key, body string) string {
 	var b strings.Builder
-	b.WriteString("xray_config_source:\n")
+	b.WriteString(key + ":\n")
 	for _, line := range strings.Split(strings.TrimSpace(body), "\n") {
 		b.WriteString("  " + line + "\n")
 	}
 	return b.String()
+}
+
+// sourceYAML expands an unindented block body into an xray_config_source block.
+func sourceYAML(body string) string {
+	return blockYAML("xray_config_source", body)
 }
 
 func TestLoadSourceRemnawave(t *testing.T) {
@@ -514,5 +519,373 @@ func TestSourceURLErrorDoesNotEchoSecret(t *testing.T) {
 				t.Errorf("error %q echoes the subscription URL", err)
 			}
 		})
+	}
+}
+
+func TestLoadUDPTargetsDefaults(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"`))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(cfg.UDPTargets) != 1 {
+		t.Fatalf("len(UDPTargets) = %d, want 1", len(cfg.UDPTargets))
+	}
+	target := cfg.UDPTargets[0]
+	if target.Name != "tg-stun-1" || target.Kind != "stun" || target.Addr != "203.0.113.10:3478" {
+		t.Errorf("target = %+v", target)
+	}
+	if target.Count != 20 {
+		t.Errorf("Count = %d, want the default 20", target.Count)
+	}
+	if target.SpacingDur != 100*time.Millisecond {
+		t.Errorf("SpacingDur = %v, want the default 100ms", target.SpacingDur)
+	}
+	if target.TimeoutDur != 0 {
+		t.Errorf("TimeoutDur = %v, want 0 (the sampler's probe timeout)", target.TimeoutDur)
+	}
+}
+
+// TestLoadUDPTargetsCountZeroDefaults pins count: 0 to the default. The field
+// cannot tell an absent count from a written zero, so both mean 20.
+func TestLoadUDPTargetsCountZeroDefaults(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+  count: 0`))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.UDPTargets[0].Count; got != 20 {
+		t.Errorf("Count = %d, want the default 20", got)
+	}
+}
+
+func TestLoadUDPTargetsRejectsUnknownKind(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: echo
+  addr: "203.0.113.10:3478"`))
+
+	err := loadError(t, path)
+	if !strings.Contains(err, "udp_targets[0]: kind must be stun") {
+		t.Errorf("error %q does not reject the kind", err)
+	}
+}
+
+func TestLoadUDPTargetsRejectsMissingName(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "absent", body: `- kind: stun
+  addr: "203.0.113.10:3478"`},
+		{name: "blank", body: `- name: "   "
+  kind: stun
+  addr: "203.0.113.10:3478"`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_targets", tc.body))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "udp_targets[0]: name is required") {
+				t.Errorf("error %q does not require the name", err)
+			}
+		})
+	}
+}
+
+func TestLoadUDPTargetsRejectsBadAddr(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10"`))
+
+	err := loadError(t, path)
+	if !strings.Contains(err, `udp_targets[0]: addr "203.0.113.10" must be host:port`) {
+		t.Errorf("error %q does not reject the addr", err)
+	}
+}
+
+func TestLoadUDPTargetsRejectsDuplicateNames(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.11:3478"`))
+
+	err := loadError(t, path)
+	if !strings.Contains(err, `udp_targets[1]: duplicate name "tg-stun-1"`) {
+		t.Errorf("error %q does not flag the duplicate name", err)
+	}
+}
+
+func TestLoadRejectsNameSharedAcrossUDPAndTCPBlocks(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"`)+blockYAML("tcp_targets", `- name: tg-stun-1
+  addr: "149.154.167.51:443"`))
+
+	err := loadError(t, path)
+	if !strings.Contains(err, `tcp_targets[0]: duplicate name "tg-stun-1"`) {
+		t.Errorf("error %q does not flag the name shared with udp_targets", err)
+	}
+}
+
+func TestLoadUDPTargetsRejectsCountOutOfRange(t *testing.T) {
+	cases := []struct {
+		name  string
+		count string
+	}{
+		{name: "negative", count: "-1"},
+		{name: "above the cap", count: "1001"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+  count: `+tc.count))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "udp_targets[0]: count must be in 1-1000") {
+				t.Errorf("error %q does not reject the count", err)
+			}
+		})
+	}
+}
+
+func TestLoadUDPTargetsRejectsSpacingOutOfRange(t *testing.T) {
+	cases := []struct {
+		name    string
+		spacing string
+	}{
+		{name: "below the floor", spacing: "500us"},
+		{name: "above the ceiling", spacing: "1500ms"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+  spacing: `+tc.spacing))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "udp_targets[0]: spacing must be between 1ms and 1s") {
+				t.Errorf("error %q does not reject the spacing", err)
+			}
+		})
+	}
+}
+
+func TestLoadUDPTargetsRejectsUnparseableDurations(t *testing.T) {
+	cases := []struct {
+		name  string
+		field string
+		want  string
+	}{
+		{name: "spacing", field: "spacing: 100 milliseconds", want: "udp_targets[0]: spacing:"},
+		{name: "timeout", field: "timeout: 15 seconds", want: "udp_targets[0]: timeout:"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+  `+tc.field))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, tc.want) {
+				t.Errorf("error %q does not name the unparseable %s", err, tc.name)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsBurstLongerThanTimeout(t *testing.T) {
+	cases := []struct {
+		name    string
+		spacing string
+		timeout string
+	}{
+		{name: "longer", spacing: "1s", timeout: "10s"},
+		{name: "equal", spacing: "100ms", timeout: "2s"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+  count: 20
+  spacing: `+tc.spacing+`
+  timeout: `+tc.timeout))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "udp_targets[0]: timeout ") || !strings.Contains(err, "must be longer than count x spacing") {
+				t.Errorf("error %q does not reject the burst longer than its timeout", err)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsBurstWithinTimeout(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_targets", `- name: tg-stun-1
+  kind: stun
+  addr: "203.0.113.10:3478"
+  count: 20
+  spacing: 100ms
+  timeout: 5s`))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	target := cfg.UDPTargets[0]
+	if target.TimeoutDur != 5*time.Second {
+		t.Errorf("TimeoutDur = %v, want 5s", target.TimeoutDur)
+	}
+	if target.SpacingDur != 100*time.Millisecond {
+		t.Errorf("SpacingDur = %v, want 100ms", target.SpacingDur)
+	}
+}
+
+func TestLoadUDPUnderLoadURL(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("udp_under_load", "url: https://mirror.example.org/20mb.bin"))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.UDPUnderLoad == nil {
+		t.Fatal("UDPUnderLoad = nil, want the block")
+	}
+	if cfg.UDPUnderLoad.URL != "https://mirror.example.org/20mb.bin" {
+		t.Errorf("URL = %q", cfg.UDPUnderLoad.URL)
+	}
+}
+
+func TestLoadUDPUnderLoadRejectsBadURL(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "empty", url: `""`, want: "udp_under_load: url is required"},
+		{name: "relative", url: "20mb.bin", want: "udp_under_load: url must be an absolute http or https URL with a host"},
+		{name: "ftp", url: "ftp://mirror.example.org/20mb.bin", want: "udp_under_load: url must be an absolute http or https URL with a host"},
+		{name: "no host", url: "https:///20mb.bin", want: "udp_under_load: url must be an absolute http or https URL with a host"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_under_load", "url: "+tc.url))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestUDPUnderLoadURLErrorDoesNotEchoURL keeps the under-load URL out of logs,
+// as the source URL's errors do: the message names the field, never the value.
+func TestUDPUnderLoadURLErrorDoesNotEchoURL(t *testing.T) {
+	urls := []string{
+		"ftp://under-load-secret.example/20mb.bin",
+		"https://under-load-secret.example/20mb.bin%zz",
+	}
+
+	for _, raw := range urls {
+		t.Run(raw, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("udp_under_load", "url: "+raw))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, "udp_under_load: url") {
+				t.Errorf("error %q does not name the url field", err)
+			}
+			if strings.Contains(err, "under-load-secret") {
+				t.Errorf("error %q echoes the under-load URL", err)
+			}
+		})
+	}
+}
+
+func TestLoadTCPTargets(t *testing.T) {
+	path := writeConfigFile(t, validBody+blockYAML("tcp_targets", `- name: mtproto-dc4
+  addr: "149.154.167.51:443"`))
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.TCPTargets) != 1 {
+		t.Fatalf("len(TCPTargets) = %d, want 1", len(cfg.TCPTargets))
+	}
+	if target := cfg.TCPTargets[0]; target.Name != "mtproto-dc4" || target.Addr != "149.154.167.51:443" {
+		t.Errorf("target = %+v", target)
+	}
+}
+
+func TestLoadTCPTargetsRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "missing name",
+			body: `- addr: "149.154.167.51:443"`,
+			want: "tcp_targets[0]: name is required",
+		},
+		{
+			name: "duplicate name",
+			body: `- name: mtproto-dc4
+  addr: "149.154.167.51:443"
+- name: mtproto-dc4
+  addr: "149.154.167.52:443"`,
+			want: `tcp_targets[1]: duplicate name "mtproto-dc4"`,
+		},
+		{
+			name: "bad addr",
+			body: `- name: mtproto-dc4
+  addr: "149.154.167.51"`,
+			want: `tcp_targets[0]: addr "149.154.167.51" must be host:port`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfigFile(t, validBody+blockYAML("tcp_targets", tc.body))
+
+			err := loadError(t, path)
+			if !strings.Contains(err, tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestUDPAndTCPBlocksAbsent pins the optionality: without the blocks nothing
+// is measured, like the reachability block.
+func TestUDPAndTCPBlocksAbsent(t *testing.T) {
+	cfg, err := config.Load(writeConfigFile(t, validBody))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(cfg.UDPTargets) != 0 || len(cfg.TCPTargets) != 0 || cfg.UDPUnderLoad != nil {
+		t.Errorf("UDPTargets = %+v, TCPTargets = %+v, UDPUnderLoad = %+v, want all empty", cfg.UDPTargets, cfg.TCPTargets, cfg.UDPUnderLoad)
 	}
 }
