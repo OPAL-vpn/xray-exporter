@@ -21,6 +21,8 @@ type ConfigExport struct {
 	Cycle       CycleExport
 	Targets     []TargetExport
 	Resolvers   []ResolverExport
+	UDPs        []UDPExport
+	TCPs        []TCPExport
 	// Entry is nil until a direct connect ran or when entry_tcp is off.
 	Entry *EntryExport
 }
@@ -52,6 +54,19 @@ type TransportExport struct {
 	Result    probe.ResolverResult
 }
 
+// UDPExport keeps the raw burst result for one target and load pass.
+type UDPExport struct {
+	Target string
+	Load   string
+	Result probe.UDPResult
+}
+
+// TCPExport keeps the raw tunnel connect result for one target.
+type TCPExport struct {
+	Target string
+	Result probe.TunnelTCPResult
+}
+
 // Export copies the snapshot under a read lock.
 func (s *Snapshot) Export() Export {
 	s.mu.RLock()
@@ -77,6 +92,8 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		},
 		Targets:   make([]TargetExport, 0, len(cfg.targets)),
 		Resolvers: make([]ResolverExport, 0),
+		UDPs:      make([]UDPExport, 0, len(cfg.udps)),
+		TCPs:      make([]TCPExport, 0, len(cfg.tcps)),
 	}
 
 	if cfg.entry != nil {
@@ -105,6 +122,13 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		transports := resolvers[resolver]
 		sort.Slice(transports, func(i, j int) bool { return transports[i].Transport < transports[j].Transport })
 		row.Resolvers = append(row.Resolvers, ResolverExport{Name: resolver, Transports: transports})
+	}
+
+	for _, key := range sortedUDPKeys(cfg.udps) {
+		row.UDPs = append(row.UDPs, UDPExport{Target: key.target, Load: key.load, Result: cfg.udps[key].result})
+	}
+	for _, target := range sortedKeys(cfg.tcps) {
+		row.TCPs = append(row.TCPs, TCPExport{Target: target, Result: cfg.tcps[target].result})
 	}
 
 	return row

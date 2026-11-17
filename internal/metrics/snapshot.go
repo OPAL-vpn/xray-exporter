@@ -92,6 +92,63 @@ func (s *Snapshot) Seed(config string, targets []string, resolvers []config.Reso
 	}
 }
 
+// SeedUDP reconciles a config's declared UDP series: every target is paired
+// with every load pass, existing measurements are kept, and target/load pairs
+// no longer declared are removed.
+func (s *Snapshot) SeedUDP(config string, targets []config.UDPTarget, loads []string, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, ok := s.configs[config]
+	if !ok {
+		cfg = newConfigState()
+		s.configs[config] = cfg
+	}
+
+	keep := make(map[udpKey]struct{}, len(targets)*len(loads))
+	for _, target := range targets {
+		for _, load := range loads {
+			key := udpKey{target: target.Name, load: load}
+			keep[key] = struct{}{}
+			if _, ok := cfg.udps[key]; !ok {
+				cfg.udps[key] = &udpState{at: now}
+			}
+		}
+	}
+	for key := range cfg.udps {
+		if _, ok := keep[key]; !ok {
+			delete(cfg.udps, key)
+		}
+	}
+}
+
+// SeedTCP reconciles a config's declared TCP targets: existing measurements
+// are kept, targets no longer present are removed. The seed time is unused
+// because TCP has no timestamp family.
+func (s *Snapshot) SeedTCP(config string, targets []config.TCPTarget, _ time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, ok := s.configs[config]
+	if !ok {
+		cfg = newConfigState()
+		s.configs[config] = cfg
+	}
+
+	keep := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		keep[target.Name] = struct{}{}
+		if _, ok := cfg.tcps[target.Name]; !ok {
+			cfg.tcps[target.Name] = &tcpState{}
+		}
+	}
+	for target := range cfg.tcps {
+		if _, ok := keep[target]; !ok {
+			delete(cfg.tcps, target)
+		}
+	}
+}
+
 func resolverTransports(resolver config.Resolver) []string {
 	var transports []string
 	if resolver.DoHURL != "" {
@@ -217,6 +274,67 @@ func (s *Snapshot) SetResolver(config, resolver, transport string, r probe.Resol
 	}
 }
 
+// SetUDP records a burst, keeping the last successful gauges when it fails.
+func (s *Snapshot) SetUDP(config, target, load string, r probe.UDPResult, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, ok := s.configs[config]
+	if !ok {
+		return
+	}
+	state, ok := cfg.udps[udpKey{target: target, load: load}]
+	if !ok {
+		return
+	}
+	state.at = at
+	state.result = r
+	if !r.Up {
+		return
+	}
+	// A successful burst always has replies: loss and jitter are meaningful
+	// even at zero, while the RTT gauges keep the shared zero guard.
+	loss := lossRatio(r)
+	state.loss = &loss
+	setLatency(&state.rtt, r.Median)
+	setLatency(&state.rttMax, r.Max)
+	jitter := r.Jitter.Seconds()
+	state.jitter = &jitter
+}
+
+// SetUDPLoad records whether the last loaded pass moved bytes; the family is
+// created on the first call because it only exists with under-load configured.
+func (s *Snapshot) SetUDPLoad(config string, up bool, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, ok := s.configs[config]
+	if !ok {
+		return
+	}
+	cfg.udpLoad = &udpLoadState{at: at, up: up}
+}
+
+// SetTCP records a connect, keeping the last successful connect time when it
+// fails.
+func (s *Snapshot) SetTCP(config, target string, r probe.TunnelTCPResult, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, ok := s.configs[config]
+	if !ok {
+		return
+	}
+	state, ok := cfg.tcps[target]
+	if !ok {
+		return
+	}
+	state.result = r
+	if r.Up {
+		setLatency(&state.connect, r.Connect)
+	}
+}
+
 // target returns nil when Seed did not declare it. The caller holds the write
 // lock.
 func (s *Snapshot) target(config, target string) *targetState {
@@ -263,6 +381,14 @@ func (s *Snapshot) SetSource(kind string) {
 // Collector renders the last snapshot without waiting for a measurement.
 func (s *Snapshot) Collector() prometheus.Collector {
 	return s.collector
+}
+
+// lossRatio is the share of sent datagrams that went unanswered.
+func lossRatio(r probe.UDPResult) float64 {
+	if r.Sent <= 0 {
+		return 0
+	}
+	return 1 - float64(r.Replies)/float64(r.Sent)
 }
 
 // setLatency ignores a zero duration: publishing it would chart as infinitely

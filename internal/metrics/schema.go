@@ -122,6 +122,33 @@ var (
 	entryTCPSeconds = newMetricDef("entry_tcp_seconds",
 		"Connect time of the last successful direct connect to the entry address.",
 		"config")
+	udpUp = newMetricDef("udp_up",
+		"Whether any matching reply arrived in the last UDP probe.",
+		"config", "target", "load")
+	udpLossRatio = newMetricDef("udp_loss_ratio",
+		"Share of datagrams lost in the last successful UDP probe.",
+		"config", "target", "load")
+	udpRTT = newMetricDef("udp_rtt_seconds",
+		"Median round trip of the replies in the last successful UDP probe.",
+		"config", "target", "load")
+	udpRTTMax = newMetricDef("udp_rtt_max_seconds",
+		"Maximum round trip of the replies in the last successful UDP probe.",
+		"config", "target", "load")
+	udpJitter = newMetricDef("udp_jitter_seconds",
+		"Mean absolute round-trip change between consecutive replies in the last successful UDP probe.",
+		"config", "target", "load")
+	udpTimestamp = newMetricDef("udp_timestamp_seconds",
+		"When the UDP target was last probed.",
+		"config", "target", "load")
+	tcpUp = newMetricDef("tcp_up",
+		"Whether a TCP CONNECT through the tunnel succeeded.",
+		"config", "target")
+	tcpSeconds = newMetricDef("tcp_seconds",
+		"Connect time of the last successful tunnel TCP connect.",
+		"config", "target")
+	udpLoadUp = newMetricDef("udp_load_up",
+		"Whether the under-load download moved bytes during the last loaded pass.",
+		"config")
 )
 
 // allMetrics is every family, in AllNames order.
@@ -136,6 +163,9 @@ var allMetrics = []*metricDef{
 	buildInfo,
 	networkInfo, networkTimestamp, controlUp, controlSeconds,
 	entryTCPUp, entryTCPSeconds,
+	udpUp, udpLossRatio, udpRTT, udpRTTMax, udpJitter, udpTimestamp,
+	tcpUp, tcpSeconds,
+	udpLoadUp,
 }
 
 // AllNames lists every metric name.
