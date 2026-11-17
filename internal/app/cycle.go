@@ -27,7 +27,7 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	})
 
 	start := time.Now()
-	s.Cycle(ctx, jobs, targets, resolvers)
+	s.Cycle(ctx, jobs, sampler.Inputs{Targets: targets, Resolvers: resolvers})
 	<-direct
 	if ctx.Err() != nil {
 		// A reload or shutdown cut this pass short; configs it never reached still

@@ -26,8 +26,10 @@ func TestCycleSeedsAndMeasures(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		[]config.Target{{Host: "a.test"}, {Host: "b.test"}},
-		[]config.Resolver{{Name: "cf", DoHURL: "https://cf.test/dns-query", DoTHost: "cf.test"}},
+		Inputs{
+			Targets:   []config.Target{{Host: "a.test"}, {Host: "b.test"}},
+			Resolvers: []config.Resolver{{Name: "cf", DoHURL: "https://cf.test/dns-query", DoTHost: "cf.test"}},
+		},
 	)
 
 	fake.mu.Lock()
@@ -110,8 +112,10 @@ func TestCycleBuildsSocksDialerFromJob(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: socksPort, DNSPort: 5353}},
-		[]config.Target{{Host: "a.test"}},
-		[]config.Resolver{{Name: "cf", DoHURL: "https://cf.test/dns-query"}},
+		Inputs{
+			Targets:   []config.Target{{Host: "a.test"}},
+			Resolvers: []config.Resolver{{Name: "cf", DoHURL: "https://cf.test/dns-query"}},
+		},
 	)
 
 	want := netutil.LoopbackAddr(socksPort)

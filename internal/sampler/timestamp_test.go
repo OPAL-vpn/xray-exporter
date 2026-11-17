@@ -27,7 +27,7 @@ func TestTargetTimestampAdvances(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		[]config.Target{{Host: target}}, nil,
+		Inputs{Targets: []config.Target{{Host: target}}},
 	)
 
 	values := snapshot(t, snap)
@@ -69,7 +69,7 @@ func TestTargetTimestampWaitsForThePair(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		[]config.Target{{Host: target}}, nil,
+		Inputs{Targets: []config.Target{{Host: target}}},
 	)
 
 	got := <-observed

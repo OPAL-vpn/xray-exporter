@@ -32,7 +32,7 @@ func TestIPLiteralSkipsDNS(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		targets, nil,
+		Inputs{Targets: targets},
 	)
 
 	fake.mu.Lock()
@@ -69,7 +69,7 @@ func TestIPLiteralPublishesNoDNSUp(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		[]config.Target{{Host: target}}, nil,
+		Inputs{Targets: []config.Target{{Host: target}}},
 	)
 
 	values := snapshot(t, snap)

@@ -39,7 +39,7 @@ func TestDeadline(t *testing.T) {
 	start := time.Now()
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		targets, nil,
+		Inputs{Targets: targets},
 	)
 	elapsed := time.Since(start)
 

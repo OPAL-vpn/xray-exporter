@@ -38,7 +38,7 @@ func TestWorkersBound(t *testing.T) {
 
 	s.Cycle(context.Background(),
 		[]Job{{Name: "nl1", SocksPort: 1080, DNSPort: 5353}},
-		hosts, nil,
+		Inputs{Targets: hosts},
 	)
 
 	if got := atomic.LoadInt32(&fake.maxInflight); got > workers {
