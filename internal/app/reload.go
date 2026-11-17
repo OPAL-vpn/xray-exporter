@@ -57,9 +57,6 @@ func (a *application) reload(ctx context.Context) {
 	}
 
 	restartedAll := a.applyInputs(exporterConfig, upstream)
-	// entry_tcp may have been switched on or off, and a failed fetch below
-	// would keep the old set without reaching seed.
-	a.recordEntries(a.configs)
 	if sourceChanged {
 		a.source = source
 		a.policy = policy
@@ -78,8 +75,10 @@ func (a *application) reload(ctx context.Context) {
 		}
 	}
 
-	now := time.Now()
 	fetched, err := a.fetchSource(ctx)
+	// The fetch can take up to its own timeout; stamp the seed with the time the
+	// set actually became current.
+	now := time.Now()
 	if err != nil {
 		a.snap.IncReloadError()
 		a.logger.Error("reload: config fetch failed, keeping previous", "error", err)
@@ -88,8 +87,11 @@ func (a *application) reload(ctx context.Context) {
 			// so start them rather than leave the exporter with no instances.
 			a.interruptCycle()
 			a.apply(a.configs)
-			a.seed(now)
 		}
+		// The exporter config was published before the fetch, so the snapshot must
+		// re-declare its targets and resolvers even when the config set is kept:
+		// otherwise the cycle measures entities the snapshot then drops.
+		a.seed(now)
 		return
 	}
 

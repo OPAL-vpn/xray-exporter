@@ -351,6 +351,45 @@ func TestStartupFetchFailureStartsWithoutConfigs(t *testing.T) {
 	}
 }
 
+// A soft startup failure leaves the exporter with nothing, and the next refresh
+// that succeeds must start the set it finds.
+func TestStartupFetchFailureRecoversOnNextRefresh(t *testing.T) {
+	p := &refreshPanel{status: http.StatusInternalServerError, body: ""}
+	srv := httptest.NewServer(p)
+	t.Cleanup(srv.Close)
+
+	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(srv.URL)), t.TempDir())
+	a, err := newApplication(env, Options{Version: "test"}, testDiscardLogger())
+	if err != nil {
+		t.Fatalf("newApplication: %v", err)
+	}
+	t.Cleanup(a.close)
+	defer a.interruptCycle()
+
+	if got := len(a.instances()); got != 0 {
+		t.Fatalf("instances = %d, want none after a failed first fetch", got)
+	}
+	if configs := a.snap.Export().Configs; len(configs) != 0 {
+		t.Fatalf("configs = %+v, want none declared after a failed first fetch", configs)
+	}
+
+	p.set(http.StatusOK, panelEntries(freedomEntry("local")))
+	a.refresh(context.Background())
+
+	if got := len(a.instances()); got != 1 {
+		t.Errorf("instances = %d, want the recovered config started", got)
+	}
+	if running, declared := configRunning(t, a.snap, "local"); !declared || !running {
+		t.Errorf("config local running = %v (declared %v), want it declared and running", running, declared)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 1.0; got != want {
+		t.Errorf("fetch_errors_total = %v, want %v", got, want)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_total"), 1.0; got != want {
+		t.Errorf("reload_total = %v, want %v: empty to one config is a changed set", got, want)
+	}
+}
+
 func TestOnceFailsWhenFetchFails(t *testing.T) {
 	panelURL := panel(t, http.StatusInternalServerError, "")
 	env := startupEnv(t, exporterConfigFile(t, remnawaveSourceBlock(panelURL)), t.TempDir())
@@ -647,6 +686,36 @@ func TestReloadRemnawaveFetchFailureKeepsPrevious(t *testing.T) {
 	a.cancelMu.Unlock()
 	if cancel == nil {
 		t.Error("a keep-previous reload started no cycle, want the kept set measured")
+	}
+}
+
+// A reload publishes the exporter config before it fetches, so a failed fetch
+// must still re-declare the snapshot's targets: the cycle already measures the
+// new list, and an undeclared target's results are dropped.
+func TestReloadFetchFailureRedeclaresTargets(t *testing.T) {
+	a, p, panelURL := refreshAppURL(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
+	defer a.interruptCycle()
+
+	body := "dns_probe_domain: example.com\ndns_upstream: 9.9.9.9:53\ntargets:\n  - host: other.example.com\n" +
+		remnawaveSourceBlock(panelURL)
+	if err := os.WriteFile(a.env.ConfigFile, []byte(body), 0o644); err != nil {
+		t.Fatalf("write exporter config: %v", err)
+	}
+
+	p.set(http.StatusInternalServerError, "")
+	a.reload(context.Background())
+
+	var targets []string
+	for _, cfg := range a.snap.Export().Configs {
+		if cfg.Name != "local" {
+			continue
+		}
+		for _, target := range cfg.Targets {
+			targets = append(targets, target.Target)
+		}
+	}
+	if len(targets) != 1 || targets[0] != "other.example.com" {
+		t.Errorf("targets = %v, want the published target declared after a failed fetch", targets)
 	}
 }
 
@@ -1165,6 +1234,31 @@ func TestRefreshRecoveryIdenticalSet(t *testing.T) {
 	}
 	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 1.0; got != want {
 		t.Errorf("fetch_errors_total = %v, want %v", got, want)
+	}
+}
+
+// A changed set after a failed fetch is a reload, not a keep: the fetch failure
+// left the previous set running, and the next good set replaces it.
+func TestRefreshChangedSetAfterFailedFetchAppliesReload(t *testing.T) {
+	a, p := refreshApp(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
+	defer a.interruptCycle()
+
+	p.set(http.StatusInternalServerError, "")
+	a.refresh(context.Background())
+
+	p.set(http.StatusOK, panelEntries(freedomEntry("local"), freedomEntry("other")))
+	a.refresh(context.Background())
+
+	if got := len(a.instances()); got != 2 {
+		t.Errorf("instances = %d, want both configs started", got)
+	}
+	for _, name := range []string{"local", "other"} {
+		if running, declared := configRunning(t, a.snap, name); !declared || !running {
+			t.Errorf("config %s running = %v (declared %v), want it declared and running", name, running, declared)
+		}
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_total"), 1.0; got != want {
+		t.Errorf("reload_total = %v, want %v: the changed set is a reload", got, want)
 	}
 }
 

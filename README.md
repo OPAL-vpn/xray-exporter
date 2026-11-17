@@ -173,7 +173,7 @@ self-labelling.
 | `xray_exporter_config_reload_total` | — | counter |
 | `xray_exporter_config_reload_errors_total` | — | counter |
 | `xray_exporter_config_fetch_total` | — | counter, fetch attempts |
-| `xray_exporter_config_fetch_errors_total` | — | counter, fetches with no usable set; climbing means the set is stale |
+| `xray_exporter_config_fetch_errors_total` | — | counter, fetches with no usable set; climbing means the set is stale or absent |
 | `xray_exporter_config_fetch_timestamp_seconds` | — | last successful fetch; absent until then |
 | `xray_exporter_config_source_info` | type | 1, the configured source |
 | `xray_build_info` | version, go_version | 1 |
