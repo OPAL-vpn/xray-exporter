@@ -12,14 +12,6 @@ import (
 	"github.com/OPAL-vpn/xray-exporter/internal/probe"
 )
 
-// The load label values. A series exists only for the loads the snapshot
-// seeded, and SetUDP ignores any other value, so these must match the seeding
-// side exactly.
-const (
-	loadIdle   = "idle"
-	loadLoaded = "loaded"
-)
-
 func (s *Sampler) cycle(ctx context.Context, job Job, in Inputs) {
 	start := time.Now()
 	if s.opts.Deadline > 0 {
@@ -38,11 +30,11 @@ func (s *Sampler) cycle(ctx context.Context, job Job, in Inputs) {
 		s.measureResolver(ctx, job, in.Resolvers[i])
 	})
 	s.each(ctx, len(in.UDPTargets), func(ctx context.Context, i int) {
-		s.measureUDP(ctx, job, in.UDPTargets[i], loadIdle, "")
+		s.measureUDP(ctx, job, in.UDPTargets[i], metrics.LoadIdle, "")
 	})
 	if in.UnderLoadURL != "" {
 		s.each(ctx, len(in.UDPTargets), func(ctx context.Context, i int) {
-			s.measureUDP(ctx, job, in.UDPTargets[i], loadLoaded, in.UnderLoadURL)
+			s.measureUDP(ctx, job, in.UDPTargets[i], metrics.LoadLoaded, in.UnderLoadURL)
 		})
 	}
 	s.each(ctx, len(in.TCPTargets), func(ctx context.Context, i int) {
@@ -123,7 +115,7 @@ func (s *Sampler) measureUDP(ctx context.Context, job Job, t config.UDPTarget, l
 
 	var bytes int64
 	stop := func() {}
-	if load == loadLoaded {
+	if load == metrics.LoadLoaded {
 		stop = s.startDownload(ctx, job, underLoadURL, &bytes)
 	}
 
@@ -135,12 +127,12 @@ func (s *Sampler) measureUDP(ctx context.Context, job Job, t config.UDPTarget, l
 	}
 
 	at := time.Now()
-	if load == loadLoaded && bytes == 0 {
+	if load == metrics.LoadLoaded && bytes == 0 {
 		s.snap.SetUDPLoad(job.Name, false, at)
 		return
 	}
 	s.snap.SetUDP(job.Name, t.Name, load, r, at)
-	if load == loadLoaded {
+	if load == metrics.LoadLoaded {
 		s.snap.SetUDPLoad(job.Name, true, at)
 	}
 }

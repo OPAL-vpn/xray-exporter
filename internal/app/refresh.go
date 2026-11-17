@@ -100,12 +100,14 @@ func (a *application) failClosed(now time.Time, cause error) {
 	a.interruptCycle()
 	a.apply(nil)
 
-	hosts, resolvers := a.declared()
+	hosts, resolvers, udpTargets, tcpTargets, loads := a.declared()
 
 	known := make(map[string]struct{}, len(a.configs))
 	for _, cfg := range a.configs {
 		a.snap.Drop(cfg.Name)
 		a.snap.Seed(cfg.Name, hosts, resolvers, now)
+		a.snap.SeedUDP(cfg.Name, udpTargets, loads, now)
+		a.snap.SeedTCP(cfg.Name, tcpTargets)
 		a.snap.SetConfig(cfg.Name, false, "")
 		known[cfg.Name] = struct{}{}
 	}

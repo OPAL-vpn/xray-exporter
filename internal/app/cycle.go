@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/OPAL-vpn/xray-exporter/internal/config"
 	"github.com/OPAL-vpn/xray-exporter/internal/health"
 	"github.com/OPAL-vpn/xray-exporter/internal/metrics"
 	"github.com/OPAL-vpn/xray-exporter/internal/sampler"
@@ -13,7 +12,7 @@ import (
 // cycle runs one measurement pass and logs its result.
 func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	jobs := a.jobs()
-	targets, resolvers, probeDomain := a.inputs()
+	in, probeDomain := a.inputs()
 
 	// The direct probes run beside the tunnel probes; the cycle waits for both.
 	direct := a.probeDirect(ctx, jobNames(jobs))
@@ -27,7 +26,7 @@ func (a *application) cycle(ctx context.Context, deadline time.Duration) {
 	})
 
 	start := time.Now()
-	s.Cycle(ctx, jobs, sampler.Inputs{Targets: targets, Resolvers: resolvers})
+	s.Cycle(ctx, jobs, in)
 	<-direct
 	if ctx.Err() != nil {
 		// A reload or shutdown cut this pass short; configs it never reached still
@@ -66,11 +65,23 @@ func (a *application) logProbes(exp metrics.Export, jobs []sampler.Job) {
 				a.logProbe(transport.Transport, cfg.Name, "resolver", resolver.Name, transport.Result.Up, transport.Result.Err)
 			}
 		}
+		for _, udp := range cfg.UDPs {
+			a.logProbe("udp", cfg.Name, "target", udp.Target, udp.Result.Up, udp.Result.Err, "load", udp.Load)
+		}
+		for _, tcp := range cfg.TCPs {
+			a.logProbe("tcp", cfg.Name, "target", tcp.Target, tcp.Result.Up, tcp.Result.Err)
+		}
+		if cfg.LoadUp != nil && !*cfg.LoadUp {
+			a.logger.Warn("under-load download moved no bytes", "config", cfg.Name)
+		}
 	}
 }
 
-func (a *application) logProbe(kind, config, label, name string, up bool, err error) {
+// logProbe logs one entity's outcome; extra attrs follow the entity's label
+// and name.
+func (a *application) logProbe(kind, config, label, name string, up bool, err error, extra ...any) {
 	attrs := []any{"config", config, "probe", kind, label, name}
+	attrs = append(attrs, extra...)
 	if up {
 		a.logger.Debug("probe succeeded", attrs...)
 		return
@@ -134,10 +145,23 @@ func (a *application) jobs() []sampler.Job {
 	return jobs
 }
 
-func (a *application) inputs() ([]config.Target, []config.Resolver, string) {
+// inputs returns one cycle's configured targets; the probe domain stays a
+// separate return because the sampler takes it as an option.
+func (a *application) inputs() (sampler.Inputs, string) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.exporterConfig.Targets, a.exporterConfig.Resolvers, a.exporterConfig.DNSProbeDomain
+
+	cfg := a.exporterConfig
+	in := sampler.Inputs{
+		Targets:    cfg.Targets,
+		Resolvers:  cfg.Resolvers,
+		UDPTargets: cfg.UDPTargets,
+		TCPTargets: cfg.TCPTargets,
+	}
+	if cfg.UDPUnderLoad != nil {
+		in.UnderLoadURL = cfg.UDPUnderLoad.URL
+	}
+	return in, cfg.DNSProbeDomain
 }
 
 func jobNames(jobs []sampler.Job) []string {

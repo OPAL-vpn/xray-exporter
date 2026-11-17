@@ -10,6 +10,14 @@ const (
 	TransportDoT = "dot"
 )
 
+// Load values for the UDP load label. The seeding side declares the pairs and
+// the sampler writes them, so both must use these constants: SetUDP ignores an
+// undeclared (target, load) pair, which would make a divergence a silent no-op.
+const (
+	LoadIdle   = "idle"
+	LoadLoaded = "loaded"
+)
+
 // metricDef is one metric family, built once and reused across scrapes.
 type metricDef struct {
 	name    string
