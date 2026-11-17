@@ -89,7 +89,7 @@ func (a *application) applySet(fetched []xraycfg.Config, now time.Time) (stopped
 	}
 	a.seed(now)
 
-	applied = a.policy.failClosed || accepted
+	applied = a.policy.startFailureIsResult || accepted
 	if applied {
 		a.snap.IncReload()
 	} else {

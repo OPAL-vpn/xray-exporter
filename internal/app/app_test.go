@@ -150,8 +150,8 @@ func TestNewSourceDefaultsToDirectory(t *testing.T) {
 	if !policy.strictStartup {
 		t.Error("strictStartup = false, want an empty directory to be fatal at startup")
 	}
-	if policy.failClosed {
-		t.Error("failClosed = true, want a directory to keep its previous set")
+	if policy.startFailureIsResult {
+		t.Error("startFailureIsResult = true, want a directory start failure to be a reload error")
 	}
 	if got, want := policy.startLogLevel, slog.LevelError; got != want {
 		t.Errorf("startLogLevel = %v, want %v", got, want)
@@ -173,7 +173,7 @@ func TestNewSourceDirectoryPath(t *testing.T) {
 	if got, want := dir.Path, "/etc/xray"; got != want {
 		t.Errorf("Path = %q, want the block path %q", got, want)
 	}
-	if !policy.strictStartup || policy.failClosed {
+	if !policy.strictStartup || policy.startFailureIsResult {
 		t.Errorf("policy = %+v, want the directory policy", policy)
 	}
 }
@@ -196,8 +196,8 @@ func TestNewSourceRemnawave(t *testing.T) {
 	if got, want := src.Refresh(), 5*time.Minute; got != want {
 		t.Errorf("Refresh() = %s, want %s", got, want)
 	}
-	if !policy.failClosed {
-		t.Error("failClosed = false, want a panel to fail closed")
+	if !policy.startFailureIsResult {
+		t.Error("startFailureIsResult = false, want a panel start failure to be a published result")
 	}
 	if policy.strictStartup {
 		t.Error("strictStartup = true, want a failed first fetch to be soft")
@@ -596,9 +596,10 @@ func TestReloadRebuildsChangedSource(t *testing.T) {
 	}
 }
 
-// A failed SIGHUP fetch on a panel fails closed and counts both the fetch and
-// the reload error; the previous configs stay declared with running=0.
-func TestReloadRemnawaveFetchFailureFailsClosed(t *testing.T) {
+// A failed SIGHUP fetch on a panel keeps the previous set running and counts
+// both the fetch and the reload error; the cycle resumes because the kept
+// configs are still worth measuring.
+func TestReloadRemnawaveFetchFailureKeepsPrevious(t *testing.T) {
 	a, p := refreshApp(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
 	defer a.interruptCycle()
 
@@ -610,13 +611,11 @@ func TestReloadRemnawaveFetchFailureFailsClosed(t *testing.T) {
 	p.set(http.StatusInternalServerError, "")
 	a.reload(context.Background())
 
-	if got := len(a.instances()); got != 0 {
-		t.Errorf("instances = %d, want every instance stopped after a failed fetch", got)
+	if got := len(a.instances()); got != 1 {
+		t.Errorf("instances = %d, want the previous instance kept after a failed fetch", got)
 	}
-	if running, declared := configRunning(t, a.snap, "local"); !declared {
-		t.Error("config local lost its series, want it declared with running=0")
-	} else if running {
-		t.Error("config local running = true, want false after a failed fetch")
+	if running, declared := configRunning(t, a.snap, "local"); !declared || !running {
+		t.Errorf("config local running = %v (declared %v), want it kept running", running, declared)
 	}
 	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 1.0; got != want {
 		t.Errorf("fetch_errors_total = %v, want %v", got, want)
@@ -630,13 +629,12 @@ func TestReloadRemnawaveFetchFailureFailsClosed(t *testing.T) {
 	if got, ok := snapValue(t, a.snap, "xray_exporter_config_fetch_timestamp_seconds"); !ok || got != fetchedAt {
 		t.Errorf("fetch timestamp = %v (present %v), want the previous success %v", got, ok, fetchedAt)
 	}
-	// The deferred start must be skipped after a fail-closed fetch: the cycle
-	// only resumes once a fetch succeeds again.
+	// The kept set is still running, so the deferred start must resume the cycle.
 	a.cancelMu.Lock()
 	cancel := a.cancel
 	a.cancelMu.Unlock()
-	if cancel != nil {
-		t.Error("a fail-closed reload started a cycle, want none until a fetch succeeds")
+	if cancel == nil {
+		t.Error("a keep-previous reload started no cycle, want the kept set measured")
 	}
 }
 
@@ -871,6 +869,15 @@ func (p *gatePanel) open() {
 func refreshApp(t *testing.T, logger *slog.Logger, body string) (*application, *refreshPanel) {
 	t.Helper()
 
+	a, p, _ := refreshAppURL(t, logger, body)
+	return a, p
+}
+
+// refreshAppURL is refreshApp that also returns the panel's base URL, so a test
+// can rewrite the exporter config and keep the same subscription.
+func refreshAppURL(t *testing.T, logger *slog.Logger, body string) (*application, *refreshPanel, string) {
+	t.Helper()
+
 	p := &refreshPanel{status: http.StatusOK, body: body}
 	srv := httptest.NewServer(p)
 	t.Cleanup(srv.Close)
@@ -881,7 +888,7 @@ func refreshApp(t *testing.T, logger *slog.Logger, body string) (*application, *
 		t.Fatalf("newApplication: %v", err)
 	}
 	t.Cleanup(a.close)
-	return a, p
+	return a, p, srv.URL
 }
 
 // instancePort returns the named instance's socks port, or 0 when it has none.
@@ -1072,7 +1079,7 @@ func TestRefreshUnchangedSetLeavesInstances(t *testing.T) {
 	}
 }
 
-func TestRefreshFetchFailureFailsClosed(t *testing.T) {
+func TestRefreshFetchFailureKeepsPrevious(t *testing.T) {
 	var logs bytes.Buffer
 	a, p := refreshApp(t, slog.New(slog.NewTextHandler(&logs, nil)), panelEntries(freedomEntry("local")))
 	defer a.interruptCycle()
@@ -1085,16 +1092,11 @@ func TestRefreshFetchFailureFailsClosed(t *testing.T) {
 	p.set(http.StatusInternalServerError, "")
 	a.refresh(context.Background())
 
-	if got := len(a.instances()); got != 0 {
-		t.Errorf("instances = %d, want every instance stopped", got)
+	if got := len(a.instances()); got != 1 {
+		t.Errorf("instances = %d, want the previous instance kept after a failed fetch", got)
 	}
-	if running, declared := configRunning(t, a.snap, "local"); !declared {
-		t.Error("config local lost its series, want it declared with running=0")
-	} else if running {
-		t.Error("config local running = true, want false after a failed fetch")
-	}
-	if got, ok := snapValue(t, a.snap, "xray_probe_up", "config", "local", "target", "example.com"); !ok || got != 0 {
-		t.Errorf("probe_up{config=\"local\"} = %v (present %v), want 0", got, ok)
+	if running, declared := configRunning(t, a.snap, "local"); !declared || !running {
+		t.Errorf("config local running = %v (declared %v), want it kept running", running, declared)
 	}
 	if got, want := counter(t, a.snap, "xray_exporter_config_fetch_errors_total"), 1.0; got != want {
 		t.Errorf("fetch_errors_total = %v, want %v", got, want)
@@ -1106,17 +1108,20 @@ func TestRefreshFetchFailureFailsClosed(t *testing.T) {
 		t.Errorf("reload_total = %v, want %v: a failed fetch is not a reload", got, want)
 	}
 	if got, want := counter(t, a.snap, "xray_exporter_config_reload_errors_total"), 0.0; got != want {
-		t.Errorf("reload_errors_total = %v, want %v", got, want)
+		t.Errorf("reload_errors_total = %v, want %v: a failed refresh is not a reload", got, want)
 	}
 
 	out := logs.String()
 	if got, want := strings.Count(out, "level=ERROR"), 1; got != want {
-		t.Errorf("ERROR lines = %d, want %d fail-closed line:\n%s", got, want, out)
+		t.Errorf("ERROR lines = %d, want %d keep-previous line:\n%s", got, want, out)
 	}
-	for _, want := range []string{"config fetch failed", "configs=1", "unexpected status"} {
+	for _, want := range []string{"config refresh failed, keeping previous", "unexpected status"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("log does not contain %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "stopped configs") {
+		t.Errorf("a failed fetch logged a stop:\n%s", out)
 	}
 }
 
@@ -1127,8 +1132,8 @@ func TestRefreshRecoveryIdenticalSet(t *testing.T) {
 
 	p.set(http.StatusInternalServerError, "")
 	a.refresh(context.Background())
-	if got := len(a.instances()); got != 0 {
-		t.Fatalf("instances = %d after the failed fetch, want 0", got)
+	if got := len(a.instances()); got != 1 {
+		t.Fatalf("instances = %d after the failed fetch, want the previous instance kept", got)
 	}
 
 	p.set(http.StatusOK, body)
@@ -1385,5 +1390,32 @@ func TestShutdownWaitsForRefresh(t *testing.T) {
 
 	if got := len(a.instances()); got != 0 {
 		t.Errorf("instances = %d after close, want 0: an apply after Close left instances behind", got)
+	}
+}
+
+// A SIGHUP that changes the DNS upstream replaces the manager, so a failed
+// fetch must start the kept configs on the new one instead of leaving the
+// exporter with no instances.
+func TestReloadFetchFailureReappliesKeptConfigsOnNewManager(t *testing.T) {
+	a, p, panelURL := refreshAppURL(t, testDiscardLogger(), panelEntries(freedomEntry("local")))
+	defer a.interruptCycle()
+
+	body := "dns_probe_domain: example.com\ndns_upstream: 1.1.1.1:53\ntargets:\n  - host: example.com\n" +
+		remnawaveSourceBlock(panelURL)
+	if err := os.WriteFile(a.env.ConfigFile, []byte(body), 0o644); err != nil {
+		t.Fatalf("write exporter config: %v", err)
+	}
+
+	p.set(http.StatusInternalServerError, "")
+	a.reload(context.Background())
+
+	if got := len(a.instances()); got != 1 {
+		t.Errorf("instances = %d, want the kept config started on the new manager", got)
+	}
+	if running, declared := configRunning(t, a.snap, "local"); !declared || !running {
+		t.Errorf("config local running = %v (declared %v), want it running on the new manager", running, declared)
+	}
+	if got, want := counter(t, a.snap, "xray_exporter_config_reload_errors_total"), 1.0; got != want {
+		t.Errorf("reload_errors_total = %v, want %v", got, want)
 	}
 }

@@ -65,10 +65,6 @@ func (a *application) refresh(ctx context.Context) {
 
 	next, err := a.fetchSource(ctx)
 	if err != nil {
-		if a.policy.failClosed {
-			a.failClosed(time.Now(), err)
-			return
-		}
 		a.logger.Error("config refresh failed, keeping previous", "error", err)
 		return
 	}
@@ -92,26 +88,6 @@ func (a *application) refresh(ctx context.Context) {
 	stopped, _ := a.applySet(next, now)
 	a.startCycle(ctx, a.env.Interval/2)
 	a.logger.Info("config refresh applied", "configs", len(next), "stopped", stopped)
-}
-
-// failClosed stops every known config after a fetch failed. The names stay
-// declared so running=0 is visible; their bytes are never started again.
-func (a *application) failClosed(now time.Time, cause error) {
-	a.interruptCycle()
-	a.apply(nil)
-
-	hosts, resolvers := a.declared()
-
-	known := make(map[string]struct{}, len(a.configs))
-	for _, cfg := range a.configs {
-		a.snap.Drop(cfg.Name)
-		a.snap.Seed(cfg.Name, hosts, resolvers, now)
-		a.snap.SetConfig(cfg.Name, false, "")
-		known[cfg.Name] = struct{}{}
-	}
-	a.seeded = known
-
-	a.logger.Error("config fetch failed; stopped configs", "configs", len(a.configs), "error", cause)
 }
 
 // sameConfigs reports whether next carries the same names and bytes as current.

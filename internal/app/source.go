@@ -15,8 +15,9 @@ import (
 // sourcePolicy is the behaviour that differs between a local directory and a
 // Remnawave panel.
 type sourcePolicy struct {
-	// failClosed stops every config when a refresh fetch fails.
-	failClosed bool
+	// startFailureIsResult makes a config that fails to start a published
+	// result rather than a reload error.
+	startFailureIsResult bool
 	// strictStartup makes a failed or empty first fetch fatal.
 	strictStartup bool
 	// startLogLevel is how a config that fails to start is logged.
@@ -60,15 +61,16 @@ func sourceHost(src xraycfg.Source) string {
 }
 
 // directoryPolicy is hand-written configs: a broken deployment at startup, and a
-// failed start is an operator error worth the ERROR level.
+// failed start is an operator error worth the ERROR level and a reload error.
 func directoryPolicy() sourcePolicy {
 	return sourcePolicy{strictStartup: true, startLogLevel: slog.LevelError}
 }
 
-// remnawavePolicy is panel-provided configs: a failed fetch or start is the
-// panel's state rather than a deployment error, so the exporter fails closed.
+// remnawavePolicy is panel-provided configs: a failed start is the panel's state
+// rather than a deployment error, so it is logged at WARN and still counts as a
+// published result.
 func remnawavePolicy() sourcePolicy {
-	return sourcePolicy{failClosed: true, startLogLevel: slog.LevelWarn}
+	return sourcePolicy{startFailureIsResult: true, startLogLevel: slog.LevelWarn}
 }
 
 // fetchSource fetches one complete set, counting the attempt. A readable but

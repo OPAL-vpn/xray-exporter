@@ -25,13 +25,11 @@ func (a *application) reload(ctx context.Context) {
 		return
 	}
 
-	// A reload always restarts the measurement, even when it rejects an input:
-	// interrupting the cycle must not leave the exporter unmeasured until the
-	// next tick. A fetch that failed closed is the exception: that state starts
-	// no cycle until a fetch succeeds again.
-	failedClosed := false
+	// A reload always restarts the measurement, even when it rejects an input or
+	// a fetch fails: interrupting the cycle must not leave the exporter unmeasured
+	// until the next tick.
 	defer func() {
-		if failedClosed || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		a.startCycle(ctx, a.env.Interval/2)
@@ -84,11 +82,6 @@ func (a *application) reload(ctx context.Context) {
 	fetched, err := a.fetchSource(ctx)
 	if err != nil {
 		a.snap.IncReloadError()
-		if a.policy.failClosed {
-			a.failClosed(now, err)
-			failedClosed = true
-			return
-		}
 		a.logger.Error("reload: config fetch failed, keeping previous", "error", err)
 		if restartedAll {
 			// The kept configs still carry the DNS upstream and the manager is new,
