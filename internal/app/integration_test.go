@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/pion/stun/v3"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/OPAL-vpn/xray-exporter/internal/config"
@@ -96,6 +97,41 @@ func testManagerFor(t *testing.T, upstream xraycfg.Upstream, cfg xraycfg.Config)
 	return manager
 }
 
+// testSTUNResponder is a loopback STUN server: it answers every binding request
+// with a success response echoing the transaction id, so a burst that collects
+// replies proves the datagrams left through the injected socks inbound.
+func testSTUNResponder(t *testing.T) string {
+	t.Helper()
+
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("listen on loopback UDP: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			n, client, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				// The listener closed: the test is over.
+				return
+			}
+			var request stun.Message
+			if err := stun.Decode(buf[:n], &request); err != nil {
+				continue
+			}
+			if request.Type != stun.BindingRequest {
+				continue
+			}
+			reply := stun.MustBuild(stun.BindingSuccess, stun.NewTransactionIDSetter(request.TransactionID))
+			_, _ = conn.WriteToUDP(reply.Raw, client)
+		}
+	}()
+
+	return conn.LocalAddr().String()
+}
+
 // TestFreedomInstanceServesACycle pins the whole probe path: a freedom instance,
 // a local HTTPS target, and one cycle with probe_up=1. The target carries the
 // test server's port because a target host has no port of its own.
@@ -139,6 +175,110 @@ func TestFreedomInstanceServesACycle(t *testing.T) {
 	if got := gather(t, a.snap)["xray_probe_up,config=freedom,target="+host]; got != 1 {
 		t.Fatalf("xray_probe_up{target=%s} = %v, want 1 (probe: up=%v status=%d err=%v)",
 			host, got, row.HTTP.Up, row.HTTP.Status, row.HTTP.Err)
+	}
+}
+
+// TestFreedomInstanceServesUDPAndTCPTargets pins the UDP and TCP probe path end
+// to end: one freedom instance, a loopback STUN responder, a loopback TCP
+// listener and a local bulk mirror. Every probe leaves through the injected
+// socks inbound, so a measured, up row proves the whole path works.
+func TestFreedomInstanceServesUDPAndTCPTargets(t *testing.T) {
+	stunAddr := testSTUNResponder(t)
+
+	tcpListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on loopback TCP: %v", err)
+	}
+	t.Cleanup(func() { tcpListener.Close() })
+	go func() {
+		for {
+			conn, err := tcpListener.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	// The mirror carries a few MiB, so the download is still moving while the
+	// loaded burst runs.
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(make([]byte, 4<<20))
+	}))
+	defer mirror.Close()
+
+	udpTarget := config.UDPTarget{
+		Name:       "stun-1",
+		Kind:       "stun",
+		Addr:       stunAddr,
+		Count:      5,
+		SpacingDur: 10 * time.Millisecond,
+	}
+	tcpTarget := config.TCPTarget{Name: "tcp-1", Addr: tcpListener.Addr().String()}
+
+	upstream := xraycfg.Upstream{Host: "127.0.0.1", Port: testDNSServer(t)}
+	cfg := xraycfg.Config{Name: "freedom", Raw: []byte(freedomConfig)}
+	manager := testManagerFor(t, upstream, cfg)
+
+	a := &application{
+		env: Env{
+			Workers:         2,
+			ProbeTimeout:    5 * time.Second,
+			ResolverTimeout: 5 * time.Second,
+		},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		snap:   metrics.New(),
+		exporterConfig: &config.ExporterConfig{
+			UDPTargets:   []config.UDPTarget{udpTarget},
+			TCPTargets:   []config.TCPTarget{tcpTarget},
+			UDPUnderLoad: &config.UDPUnderLoad{URL: mirror.URL},
+		},
+		manager: manager,
+		source:  xraycfg.Directory{},
+		policy:  directoryPolicy(),
+		configs: []xraycfg.Config{cfg},
+	}
+	a.snap.SetBuildInfo("test", "go-test")
+	a.seed(time.Now())
+
+	a.cycle(context.Background(), time.Minute)
+
+	exp := a.snap.Export()
+	if len(exp.Configs) != 1 || exp.Configs[0].Name != "freedom" {
+		t.Fatalf("configs = %+v, want one config named freedom", exp.Configs)
+	}
+	cfgExp := exp.Configs[0]
+
+	rows := make(map[string]metrics.UDPExport, len(cfgExp.UDPs))
+	for _, row := range cfgExp.UDPs {
+		rows[row.Load] = row
+	}
+	for _, load := range []string{metrics.LoadIdle, metrics.LoadLoaded} {
+		row, ok := rows[load]
+		if !ok {
+			t.Fatalf("udp rows = %+v, want one for load %s", cfgExp.UDPs, load)
+		}
+		if !row.Measured {
+			t.Errorf("udp row {load=%s} measured = false, want true", load)
+		}
+		if !row.Result.Up {
+			t.Errorf("udp row {load=%s} up = false, want true (sent=%d replies=%d err=%v)",
+				load, row.Result.Sent, row.Result.Replies, row.Result.Err)
+		}
+		if row.Result.Replies != udpTarget.Count {
+			t.Errorf("udp row {load=%s} replies = %d, want %d", load, row.Result.Replies, udpTarget.Count)
+		}
+	}
+
+	if len(cfgExp.TCPs) != 1 {
+		t.Fatalf("tcp rows = %+v, want one", cfgExp.TCPs)
+	}
+	if row := cfgExp.TCPs[0]; !row.Measured || !row.Result.Up {
+		t.Errorf("tcp row = %+v, want measured and up", row)
+	}
+
+	if cfgExp.LoadUp == nil || !*cfgExp.LoadUp {
+		t.Errorf("LoadUp = %v, want true: the under-load download moved bytes", cfgExp.LoadUp)
 	}
 }
 
