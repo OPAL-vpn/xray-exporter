@@ -221,8 +221,8 @@ previous loaded sample and its timestamp stay, so staleness stays visible — an
 `xray_udp_load_up` goes to 0. That gauge is generator health, not tunnel health:
 the idle series never depend on the URL. A target whose burst is too short for
 the first GET to move bytes reports 0 for the same reason, so the burst must be
-long enough for the download to start — with the defaults (count 20, spacing
-100 ms) it always is.
+long enough for the download to start — the defaults (count 20, spacing 100 ms)
+give a burst of about two seconds, which is long enough in practice.
 
 ### Reading the numbers
 

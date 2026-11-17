@@ -2435,7 +2435,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance) (xray_udp_load_up{instance=~\"$instance\",config=~\"$config\"})",
+          "expr": "min by (instance) (xray_udp_load_up{instance=~\"$instance\",config=~\"$config\"})",
           "instant": true,
           "legendFormat": "{{instance}}",
           "range": false,
