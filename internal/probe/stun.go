@@ -23,7 +23,7 @@ type UDPResult struct {
 	Median    time.Duration // median RTT of the replies; 0 when Up is false
 	Max       time.Duration // longest RTT of the replies
 	Jitter    time.Duration // mean |ΔRTT| across consecutive replies in arrival order
-	Reordered int           // replies arriving after a later-sent request's reply
+	Reordered int           // replies whose send index is lower than the previous reply's
 	Err       error
 }
 
@@ -117,6 +117,12 @@ func ProbeSTUN(ctx context.Context, socksAddr, target string, count int, spacing
 			reordered++
 		}
 		prevIndex = index
+
+		// timeout bounds the probe; with no loss left to observe, waiting
+		// out the rest of it only delays the caller.
+		if len(answered) == sent {
+			break
+		}
 	}
 
 	result := UDPResult{Sent: sent, Replies: len(rtts), Reordered: reordered}

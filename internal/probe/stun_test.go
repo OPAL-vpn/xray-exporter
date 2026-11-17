@@ -23,6 +23,7 @@ type testSTUNServer struct {
 	delay      time.Duration
 	delayFirst time.Duration
 	foreign    bool
+	errorReply bool
 	requests   int
 }
 
@@ -73,6 +74,14 @@ func (s *testSTUNServer) replyForeign() {
 	s.foreign = true
 }
 
+// replyError answers with a binding error response instead of a success, as a
+// TURN server does for an unauthenticated binding request.
+func (s *testSTUNServer) replyError() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.errorReply = true
+}
+
 func (s *testSTUNServer) serve() {
 	buf := make([]byte, 1500)
 	for {
@@ -92,7 +101,8 @@ func (s *testSTUNServer) serve() {
 		s.mu.Lock()
 		index := s.requests
 		s.requests++
-		drop, delay, delayFirst, foreign := s.drop, s.delay, s.delayFirst, s.foreign
+		drop, delay, delayFirst := s.drop, s.delay, s.delayFirst
+		foreign, errorReply := s.foreign, s.errorReply
 		s.mu.Unlock()
 
 		if index < drop {
@@ -106,7 +116,11 @@ func (s *testSTUNServer) serve() {
 		if foreign {
 			id = stun.NewTransactionID()
 		}
-		raw := stun.MustBuild(stun.BindingSuccess, stun.NewTransactionIDSetter(id)).Raw
+		messageType := stun.BindingSuccess
+		if errorReply {
+			messageType = stun.BindingError
+		}
+		raw := stun.MustBuild(messageType, stun.NewTransactionIDSetter(id)).Raw
 
 		go func() {
 			if delay > 0 {
@@ -348,10 +362,10 @@ func TestProbeSTUNIgnoresForeignTransactionID(t *testing.T) {
 func TestProbeSTUNCountsReordering(t *testing.T) {
 	server := newTestSTUNServer(t)
 	server.delayReplies(10 * time.Millisecond)
-	server.delayFirstReply(40 * time.Millisecond)
+	server.delayFirstReply(150 * time.Millisecond)
 	socksAddr, target := stunProbePath(t, server)
 
-	result := probe.ProbeSTUN(context.Background(), socksAddr, target, 3, 20*time.Millisecond, time.Second)
+	result := probe.ProbeSTUN(context.Background(), socksAddr, target, 3, 50*time.Millisecond, 2*time.Second)
 
 	if result.Err != nil {
 		t.Fatalf("ProbeSTUN: %v", result.Err)
@@ -361,6 +375,43 @@ func TestProbeSTUNCountsReordering(t *testing.T) {
 	}
 	if result.Reordered < 1 {
 		t.Errorf("Reordered = %d, want >= 1; the delayed first reply was not counted", result.Reordered)
+	}
+}
+
+func TestProbeSTUNAcceptsBindingError(t *testing.T) {
+	server := newTestSTUNServer(t)
+	server.replyError()
+	socksAddr, target := stunProbePath(t, server)
+
+	result := probe.ProbeSTUN(context.Background(), socksAddr, target, 5, 5*time.Millisecond, time.Second)
+
+	if result.Err != nil {
+		t.Fatalf("ProbeSTUN: %v", result.Err)
+	}
+	if !result.Up {
+		t.Error("Up = false, want true; a binding error response is a matching reply")
+	}
+	if result.Replies != 5 {
+		t.Errorf("Replies = %d, want 5", result.Replies)
+	}
+}
+
+func TestProbeSTUNStopsOnceAllAnswered(t *testing.T) {
+	server := newTestSTUNServer(t)
+	socksAddr, target := stunProbePath(t, server)
+
+	start := time.Now()
+	result := probe.ProbeSTUN(context.Background(), socksAddr, target, 10, 5*time.Millisecond, 5*time.Second)
+	elapsed := time.Since(start)
+
+	if result.Err != nil {
+		t.Fatalf("ProbeSTUN: %v", result.Err)
+	}
+	if result.Replies != 10 {
+		t.Fatalf("Replies = %d, want 10", result.Replies)
+	}
+	if elapsed >= 2*time.Second {
+		t.Errorf("elapsed = %v, want well under the 5s timeout once every request is answered", elapsed)
 	}
 }
 
