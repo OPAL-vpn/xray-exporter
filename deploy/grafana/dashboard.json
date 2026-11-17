@@ -380,12 +380,78 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg by (config) (avg_over_time(xray_probe_up{instance=~\"$instance\",config=~\"$config\",target=~\"$target\"}[15m]))",
+          "refId": "A",
+          "legendFormat": "{{config}}"
+        }
+      ],
+      "title": "Probe success ratio 15m: average per config",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 31
       },
       "panels": [],
       "title": "Performance",
@@ -427,7 +493,7 @@
         "h": 12,
         "w": 8,
         "x": 0,
-        "y": 20
+        "y": 32
       },
       "options": {
         "legend": {
@@ -495,7 +561,7 @@
         "h": 12,
         "w": 8,
         "x": 8,
-        "y": 20
+        "y": 32
       },
       "options": {
         "legend": {
@@ -563,7 +629,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 20
+        "y": 32
       },
       "options": {
         "legend": {
@@ -631,7 +697,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 44
       },
       "options": {
         "legend": {
@@ -699,7 +765,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 44
       },
       "options": {
         "legend": {
@@ -737,7 +803,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 54
       },
       "panels": [],
       "title": "Reachability",
@@ -765,7 +831,7 @@
         "h": 18,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 55
       },
       "options": {
         "cellHeight": "sm",
@@ -846,7 +912,7 @@
         "h": 18,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 73
       },
       "options": {
         "legend": {
@@ -914,7 +980,7 @@
         "h": 18,
         "w": 12,
         "x": 12,
-        "y": 61
+        "y": 73
       },
       "options": {
         "legend": {
@@ -999,7 +1065,7 @@
         "h": 24,
         "w": 12,
         "x": 0,
-        "y": 79
+        "y": 91
       },
       "options": {
         "legend": {
@@ -1080,7 +1146,7 @@
         "h": 24,
         "w": 12,
         "x": 12,
-        "y": 79
+        "y": 91
       },
       "options": {
         "legend": {
@@ -1114,7 +1180,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 115
       },
       "panels": [],
       "title": "Targets",
@@ -1216,7 +1282,7 @@
         "h": 18,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 116
       },
       "options": {
         "cellHeight": "sm",
@@ -1343,7 +1409,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 122
+        "y": 134
       },
       "options": {
         "cellHeight": "sm",
@@ -1476,7 +1542,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 130
+        "y": 142
       },
       "interval": "1m",
       "options": {
@@ -1565,7 +1631,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 142
+        "y": 154
       },
       "interval": "1m",
       "options": {
@@ -1628,7 +1694,7 @@
         "h": 21,
         "w": 8,
         "x": 0,
-        "y": 154
+        "y": 166
       },
       "options": {
         "legend": {
@@ -1695,7 +1761,7 @@
         "h": 21,
         "w": 8,
         "x": 8,
-        "y": 154
+        "y": 166
       },
       "options": {
         "legend": {
@@ -1762,7 +1828,7 @@
         "h": 21,
         "w": 8,
         "x": 16,
-        "y": 154
+        "y": 166
       },
       "options": {
         "legend": {
@@ -1800,7 +1866,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 175
+        "y": 187
       },
       "panels": [],
       "title": "Resolvers",
@@ -1902,7 +1968,7 @@
         "h": 15,
         "w": 12,
         "x": 0,
-        "y": 176
+        "y": 188
       },
       "options": {
         "cellHeight": "sm",
@@ -2004,7 +2070,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 191
+        "y": 203
       },
       "options": {
         "cellHeight": "sm",
@@ -2089,7 +2155,7 @@
         "h": 21,
         "w": 12,
         "x": 12,
-        "y": 176
+        "y": 188
       },
       "options": {
         "legend": {
@@ -2127,7 +2193,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 197
+        "y": 209
       },
       "panels": [],
       "title": "Config",
@@ -2172,7 +2238,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 198
+        "y": 210
       },
       "options": {
         "cellHeight": "sm",
@@ -2252,7 +2318,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 206
+        "y": 218
       },
       "panels": [],
       "title": "UDP quality",
@@ -2289,7 +2355,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 207
+        "y": 219
       },
       "options": {
         "colorMode": "value",
@@ -2352,7 +2418,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 207
+        "y": 219
       },
       "options": {
         "colorMode": "value",
@@ -2415,7 +2481,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 207
+        "y": 219
       },
       "options": {
         "colorMode": "value",
@@ -2484,7 +2550,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 213
+        "y": 225
       },
       "options": {
         "legend": {
@@ -2551,7 +2617,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 213
+        "y": 225
       },
       "options": {
         "legend": {
@@ -2618,7 +2684,7 @@
         "h": 12,
         "w": 8,
         "x": 0,
-        "y": 225
+        "y": 237
       },
       "options": {
         "legend": {
@@ -2685,7 +2751,7 @@
         "h": 12,
         "w": 8,
         "x": 8,
-        "y": 225
+        "y": 237
       },
       "options": {
         "legend": {
@@ -2752,7 +2818,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 225
+        "y": 237
       },
       "options": {
         "legend": {
