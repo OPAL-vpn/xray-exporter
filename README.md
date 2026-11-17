@@ -128,8 +128,8 @@ One request per interval — none when `refresh: 0` — with
 no cookie are sent.
 
 A failed fetch is not fatal: the exporter keeps the last successfully fetched
-set running and retries every `refresh`, so a panel outage costs freshness, not
-measurement. `xray_exporter_config_fetch_errors_total` climbs and
+set running and retries on its next fetch, so a panel outage costs freshness,
+not measurement. `xray_exporter_config_fetch_errors_total` climbs and
 `xray_exporter_config_fetch_timestamp_seconds` stops advancing while the panel
 is unreachable.
 
@@ -137,7 +137,9 @@ is unreachable.
 
 Both sources behave the same way: a failed fetch keeps the last good set
 running, counts a fetch error and leaves the fetch timestamp where it was. A
-readable but empty set is still authoritative and stops every config.
+fetch that fails during a `SIGHUP` reload also counts a reload error, so
+`xray_exporter_config_reload_errors_total` climbs there too. A readable but
+empty set is still authoritative and stops every config.
 
 The directory source is read at startup and on `SIGHUP`, never on a timer. A
 startup with an empty or unreadable directory is fatal. Its reload errors keep
