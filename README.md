@@ -126,14 +126,21 @@ mutually exclusive, `refresh` is remnawave-only. The block replaces nothing else
 /json`, a 20 s timeout and an 8 MiB body cap. No token and
 no cookie are sent.
 
-### The directory source is unchanged
+A failed fetch is not fatal: the exporter keeps the last successfully fetched
+set running and retries every `refresh`, so a panel outage costs freshness, not
+measurement. `xray_exporter_config_fetch_errors_total` climbs and
+`xray_exporter_config_fetch_timestamp_seconds` stops advancing while the panel
+is unreachable.
 
-It is read at startup and on `SIGHUP`, never on a timer. A startup with an
-empty or unreadable directory is fatal. On `SIGHUP` a read error keeps the
-previous set, counts a reload error and increments
-`xray_exporter_config_fetch_errors_total`, while a readable empty directory is
-authoritative and stops every config. Its reload errors keep their old meaning:
-a config that fails to start makes the reload an error.
+### A failed fetch keeps the previous set
+
+Both sources behave the same way: a failed fetch keeps the last good set
+running, counts a fetch error and leaves the fetch timestamp where it was. A
+readable but empty set is still authoritative and stops every config.
+
+The directory source is read at startup and on `SIGHUP`, never on a timer. A
+startup with an empty or unreadable directory is fatal. Its reload errors keep
+their old meaning: a config that fails to start makes the reload an error.
 
 ## Metrics
 
@@ -162,7 +169,7 @@ self-labelling.
 | `xray_exporter_config_reload_total` | — | counter |
 | `xray_exporter_config_reload_errors_total` | — | counter |
 | `xray_exporter_config_fetch_total` | — | counter, fetch attempts |
-| `xray_exporter_config_fetch_errors_total` | — | counter, fetches with no usable set |
+| `xray_exporter_config_fetch_errors_total` | — | counter, fetches with no usable set; climbing means the set is stale |
 | `xray_exporter_config_fetch_timestamp_seconds` | — | last successful fetch; absent until then |
 | `xray_exporter_config_source_info` | type | 1, the configured source |
 | `xray_build_info` | version, go_version | 1 |
