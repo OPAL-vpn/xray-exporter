@@ -249,6 +249,11 @@ func TestFreedomInstanceServesUDPAndTCPTargets(t *testing.T) {
 	}
 	cfgExp := exp.Configs[0]
 
+	// One target and two load passes: the map below would hide a duplicate row,
+	// so the count is checked before it is built.
+	if len(cfgExp.UDPs) != 2 {
+		t.Fatalf("udp rows = %+v, want one idle and one loaded row", cfgExp.UDPs)
+	}
 	rows := make(map[string]metrics.UDPExport, len(cfgExp.UDPs))
 	for _, row := range cfgExp.UDPs {
 		rows[row.Load] = row
@@ -257,6 +262,9 @@ func TestFreedomInstanceServesUDPAndTCPTargets(t *testing.T) {
 		row, ok := rows[load]
 		if !ok {
 			t.Fatalf("udp rows = %+v, want one for load %s", cfgExp.UDPs, load)
+		}
+		if row.Target != udpTarget.Name {
+			t.Errorf("udp row {load=%s} target = %q, want %q", load, row.Target, udpTarget.Name)
 		}
 		if !row.Measured {
 			t.Errorf("udp row {load=%s} measured = false, want true", load)
