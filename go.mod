@@ -4,6 +4,7 @@ go 1.27
 
 require (
 	github.com/miekg/dns v1.1.73
+	github.com/pion/stun/v3 v3.1.7
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/xtls/xray-core v1.260327.1-0.20261031132019-a4a3dff5b20c
@@ -32,7 +33,6 @@ require (
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pion/dtls/v3 v3.1.5 // indirect
 	github.com/pion/logging v0.2.4 // indirect
-	github.com/pion/stun/v3 v3.1.7 // indirect
 	github.com/pion/transport/v4 v4.1.0 // indirect
 	github.com/pires/go-proxyproto v0.16.0 // indirect
 	github.com/prometheus/common v0.72.0 // indirect
