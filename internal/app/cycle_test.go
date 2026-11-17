@@ -147,8 +147,9 @@ func assertDeclared(t *testing.T, snap *metrics.Snapshot, udp []config.UDPTarget
 	}
 }
 
-// logProbes reports every UDP row that is not up, every failed TCP row and a
-// loaded pass that moved no bytes.
+// logProbes reports every measured UDP row that is not up, every measured
+// failed TCP row and a loaded pass that moved no bytes; a seeded-but-unmeasured
+// row is silent.
 func TestLogProbesReportsUDPFailures(t *testing.T) {
 	var logs bytes.Buffer
 	a := &application{

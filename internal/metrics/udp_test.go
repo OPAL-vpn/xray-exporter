@@ -256,6 +256,11 @@ func TestExportUDPAndTCP(t *testing.T) {
 	tcpResult := probe.TunnelTCPResult{Up: true, Connect: 20 * time.Millisecond}
 	snap.SetTCP("nl1", "m", tcpResult, secondTime)
 
+	// A first failure on a fresh row still counts as measured: only seeding
+	// leaves Measured false, and an unmeasured row is never logged as a failure.
+	snap.SetUDP("nl1", "b", "idle", probe.UDPResult{Err: errors.New("relay: timeout")}, secondTime)
+	snap.SetTCP("nl1", "z", probe.TunnelTCPResult{Err: errors.New("connect refused")}, secondTime)
+
 	exp := snap.Export()
 	if len(exp.Configs) != 1 {
 		t.Fatalf("Export has %d configs, want 1", len(exp.Configs))
@@ -282,9 +287,13 @@ func TestExportUDPAndTCP(t *testing.T) {
 		t.Errorf("UDP a/idle result = %+v, want the raw result %+v", got, udpResult)
 	}
 	for _, row := range cfg.UDPs {
-		want := row.Target == "a" && row.Load == "idle"
+		want := row.Target == "a" && row.Load == "idle" ||
+			row.Target == "b" && row.Load == "idle"
 		if row.Measured != want {
 			t.Errorf("UDP %s/%s Measured = %v, want %v", row.Target, row.Load, row.Measured, want)
+		}
+		if row.Target == "b" && row.Load == "idle" && row.Result.Up {
+			t.Errorf("UDP b/idle Up = true, want the first failure recorded as down")
 		}
 	}
 
@@ -299,9 +308,12 @@ func TestExportUDPAndTCP(t *testing.T) {
 		t.Errorf("TCP m result = %+v, want the raw result %+v", got, tcpResult)
 	}
 	for _, row := range cfg.TCPs {
-		want := row.Target == "m"
+		want := row.Target == "m" || row.Target == "z"
 		if row.Measured != want {
 			t.Errorf("TCP %s Measured = %v, want %v", row.Target, row.Measured, want)
+		}
+		if row.Target == "z" && row.Result.Up {
+			t.Errorf("TCP z Up = true, want the first failure recorded as down")
 		}
 	}
 
