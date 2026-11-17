@@ -12,8 +12,9 @@ narrowed down. `instance` is the Prometheus `instance` label from
 `deploy/prometheus.yml`, not something the exporter sets.
 
 `udp_target` is a second target list, taken from `xray_udp_up`: the UDP quality
-row uses it so UDP target names never appear in the HTTPS `target` list. `node`
-is single-select and drives the two Reachability detail timelines.
+row uses it so UDP target names never appear in the HTTPS `target` list. The two
+Reachability detail timelines follow `instance` as well and paginate ten rows at
+a time, so one selector drives the whole dashboard.
 
 | Variable | Source |
 |---|---|
@@ -22,7 +23,6 @@ is single-select and drives the two Reachability detail timelines.
 | `config` | `label_values(xray_config_running{instance=~"$instance"}, config)` |
 | `target` | `label_values(xray_probe_up{instance=~"$instance",config=~"$config"}, target)` |
 | `udp_target` | `label_values(xray_udp_up{instance=~"$instance",config=~"$config"}, target)` |
-| `node` | `label_values(xray_control_up, instance)` |
 
 ## Import via the UI
 
@@ -57,7 +57,7 @@ Prometheus lives elsewhere.
 |---|---|
 | Overview | configs up, cycle age, config fetch age, 15m probe success ratio, 15m tunnel DNS up ratio |
 | Performance | TTFB, DNS lookup and total request averages per node, DNS share of TTFB, body transfer |
-| Reachability | egress network table, direct controls share up, entry TCP share reachable, per-node detail timelines for controls and entry TCP |
+| Reachability | egress network table, direct controls share up, entry TCP share reachable, per-node detail timelines for controls and entry TCP, paginated |
 | Targets | target success table, failing targets table and timeline, HTTP status timeline, TTFB, total request time, tunnel DNS lookup |
 | Resolvers | resolver success table, failing resolvers table, resolver latency |
 | Config | config health table |

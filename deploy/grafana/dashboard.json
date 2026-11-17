@@ -876,7 +876,7 @@
       ],
       "title": "Direct controls: share up per node",
       "type": "timeseries",
-      "description": "One line per node: the share of its direct probes (ya.ru, google.com, TCP, DNS) that answer, outside any tunnel. A drop means the node's own network is degraded or filtering; pick the node below for the detail."
+      "description": "One line per node: the share of its direct probes (ya.ru, google.com, TCP, DNS) that answer, outside any tunnel. A drop means the node's own network is degraded or filtering; the timeline below breaks them down per node."
     },
     {
       "datasource": {
@@ -1008,6 +1008,7 @@
           "showLegend": true
         },
         "mergeValues": true,
+        "perPage": 10,
         "rowHeight": 0.9,
         "showValue": "auto"
       },
@@ -1017,14 +1018,14 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_control_up{instance=\"$node\"}",
+          "expr": "xray_control_up{instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{class}}/{{kind}}/{{name}}"
+          "legendFormat": "{{instance}} · {{class}}/{{kind}}/{{name}}"
         }
       ],
-      "title": "Direct controls: details for $node",
+      "title": "Direct controls: details per node",
       "type": "state-timeline",
-      "description": "Each direct probe of the node picked in the Node variable. Class is domestic or foreign: domestic up with foreign down looks like a whitelist regime, everything down is a dead line."
+      "description": "Each direct probe of the instances picked in the Instance selector, one row per probe. Rows are ordered by class, so an instance's domestic and foreign probes sit in separate blocks; domestic up with foreign down looks like a whitelist regime, everything down is a dead line."
     },
     {
       "datasource": {
@@ -1088,6 +1089,7 @@
           "showLegend": true
         },
         "mergeValues": true,
+        "perPage": 10,
         "rowHeight": 0.9,
         "showValue": "auto"
       },
@@ -1097,14 +1099,14 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "xray_entry_tcp_up{instance=\"$node\"}",
+          "expr": "xray_entry_tcp_up{instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{config}}"
+          "legendFormat": "{{instance}} · {{config}}"
         }
       ],
-      "title": "Entry TCP: details for $node",
+      "title": "Entry TCP: details per node",
       "type": "state-timeline",
-      "description": "A direct TCP connect from the picked node to each config's server address, with no xray in between. It separates a blocked address or port (down) from a blocked protocol (up while the tunnel probe fails)."
+      "description": "A direct TCP connect from every picked instance to each config's server address, with no xray in between. It separates a blocked address or port (down) from a blocked protocol (up while the tunnel probe fails)."
     },
     {
       "collapsed": false,
@@ -2908,27 +2910,6 @@
         "options": [],
         "query": "label_values(xray_udp_up{instance=~\"$instance\",config=~\"$config\"}, target)",
         "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "allValue": ".*",
-        "current": {},
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(xray_control_up, instance)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Node",
-        "multi": false,
-        "name": "node",
-        "options": [],
-        "query": "label_values(xray_control_up, instance)",
-        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
