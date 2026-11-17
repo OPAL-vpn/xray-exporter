@@ -37,7 +37,7 @@ func TestAllNamesCoverEverything(t *testing.T) {
 	snap.SetControl(config.ControlTCP, "cf", true, time.Millisecond)
 	snap.SetEntry("nl1", true, time.Millisecond)
 	snap.SeedUDP("nl1", []config.UDPTarget{{Name: "tg", Kind: "stun", Addr: "203.0.113.10:3478"}}, []string{"idle", "loaded"}, seedTime)
-	snap.SeedTCP("nl1", []config.TCPTarget{{Name: "dc4", Addr: "149.154.167.51:443"}}, seedTime)
+	snap.SeedTCP("nl1", []config.TCPTarget{{Name: "dc4", Addr: "149.154.167.51:443"}})
 	snap.SetUDP("nl1", "tg", "idle", probe.UDPResult{Up: true, Sent: 2, Replies: 2, Median: time.Millisecond, Max: 2 * time.Millisecond, Jitter: time.Millisecond}, secondTime)
 	snap.SetUDPLoad("nl1", true, secondTime)
 	snap.SetTCP("nl1", "dc4", probe.TunnelTCPResult{Up: true, Connect: time.Millisecond}, secondTime)

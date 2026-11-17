@@ -23,6 +23,8 @@ type ConfigExport struct {
 	Resolvers   []ResolverExport
 	UDPs        []UDPExport
 	TCPs        []TCPExport
+	// LoadUp is nil until a loaded pass has reported, or when under-load is off.
+	LoadUp *bool
 	// Entry is nil until a direct connect ran or when entry_tcp is off.
 	Entry *EntryExport
 }
@@ -94,6 +96,11 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 		Resolvers: make([]ResolverExport, 0),
 		UDPs:      make([]UDPExport, 0, len(cfg.udps)),
 		TCPs:      make([]TCPExport, 0, len(cfg.tcps)),
+	}
+
+	if cfg.udpLoad != nil {
+		loadUp := cfg.udpLoad.up
+		row.LoadUp = &loadUp
 	}
 
 	if cfg.entry != nil {

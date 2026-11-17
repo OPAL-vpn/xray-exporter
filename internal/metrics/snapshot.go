@@ -120,12 +120,24 @@ func (s *Snapshot) SeedUDP(config string, targets []config.UDPTarget, loads []st
 			delete(cfg.udps, key)
 		}
 	}
+
+	// A removed under-load pass must not keep reporting generator health for
+	// a run that no longer happens.
+	underLoad := false
+	for _, load := range loads {
+		if load == "loaded" {
+			underLoad = true
+			break
+		}
+	}
+	if !underLoad {
+		cfg.udpLoad = nil
+	}
 }
 
 // SeedTCP reconciles a config's declared TCP targets: existing measurements
-// are kept, targets no longer present are removed. The seed time is unused
-// because TCP has no timestamp family.
-func (s *Snapshot) SeedTCP(config string, targets []config.TCPTarget, _ time.Time) {
+// are kept, targets no longer present are removed.
+func (s *Snapshot) SeedTCP(config string, targets []config.TCPTarget) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -304,7 +316,9 @@ func (s *Snapshot) SetUDP(config, target, load string, r probe.UDPResult, at tim
 
 // SetUDPLoad records whether the last loaded pass moved bytes; the family is
 // created on the first call because it only exists with under-load configured.
-func (s *Snapshot) SetUDPLoad(config string, up bool, at time.Time) {
+// The timestamp is accepted for the uniform setter shape but not exposed: the
+// spec has no load-timestamp family.
+func (s *Snapshot) SetUDPLoad(config string, up bool, _ time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -312,7 +326,7 @@ func (s *Snapshot) SetUDPLoad(config string, up bool, at time.Time) {
 	if !ok {
 		return
 	}
-	cfg.udpLoad = &udpLoadState{at: at, up: up}
+	cfg.udpLoad = &udpLoadState{up: up}
 }
 
 // SetTCP records a connect, keeping the last successful connect time when it

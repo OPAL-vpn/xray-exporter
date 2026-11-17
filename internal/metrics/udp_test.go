@@ -74,10 +74,10 @@ func TestSeedUDPRemovesDroppedTargets(t *testing.T) {
 
 func TestSeedTCPRemovesDroppedTargets(t *testing.T) {
 	snap := New()
-	snap.SeedTCP("nl1", []config.TCPTarget{tcpTarget("dc4", "149.154.167.51:443")}, seedTime)
+	snap.SeedTCP("nl1", []config.TCPTarget{tcpTarget("dc4", "149.154.167.51:443")})
 	snap.SetTCP("nl1", "dc4", probe.TunnelTCPResult{Up: true, Connect: 20 * time.Millisecond}, secondTime)
 
-	snap.SeedTCP("nl1", []config.TCPTarget{tcpTarget("dc5", "149.154.167.50:443")}, thirdTime)
+	snap.SeedTCP("nl1", []config.TCPTarget{tcpTarget("dc5", "149.154.167.50:443")})
 	samples := gatherSamples(t, snap)
 
 	for _, s := range samples {
@@ -122,6 +122,17 @@ func TestSetUDPFailureKeepsLastLatency(t *testing.T) {
 	}
 	if got := mustSample(t, samples, "xray_udp_timestamp_seconds", lbls); got != timestampSeconds(thirdTime) {
 		t.Errorf("xray_udp_timestamp_seconds after failure = %v, want %v", got, timestampSeconds(thirdTime))
+	}
+
+	// A single reply is still a success: jitter is a meaningful zero and is
+	// published, unlike a zero RTT which the shared guard would hide.
+	snap.SetUDP("nl1", "tg", "idle", probe.UDPResult{Up: true, Sent: 1, Replies: 1, Median: 8 * time.Millisecond}, thirdTime)
+	samples = gatherSamples(t, snap)
+	if got := mustSample(t, samples, "xray_udp_jitter_seconds", lbls); got != 0 {
+		t.Errorf("xray_udp_jitter_seconds after a single-reply success = %v, want 0", got)
+	}
+	if got := mustSample(t, samples, "xray_udp_rtt_seconds", lbls); got != 0.008 {
+		t.Errorf("xray_udp_rtt_seconds after a single-reply success = %v, want 0.008", got)
 	}
 }
 
@@ -183,9 +194,22 @@ func TestSetUDPLoad(t *testing.T) {
 	}
 }
 
+func TestSeedUDPClearsLoadWhenUnderLoadRemoved(t *testing.T) {
+	snap := New()
+	snap.SeedUDP("nl1", []config.UDPTarget{stunTarget("tg", "203.0.113.10:3478")}, []string{"idle", "loaded"}, seedTime)
+	snap.SetUDPLoad("nl1", true, secondTime)
+
+	snap.SeedUDP("nl1", []config.UDPTarget{stunTarget("tg", "203.0.113.10:3478")}, []string{"idle"}, thirdTime)
+
+	mustNoSample(t, gatherSamples(t, snap), "xray_udp_load_up", labels("config", "nl1"))
+	if cfg := snap.Export().Configs[0]; cfg.LoadUp != nil {
+		t.Errorf("ConfigExport.LoadUp = %v after under-load was removed, want nil", *cfg.LoadUp)
+	}
+}
+
 func TestSetTCPKeepsLastConnect(t *testing.T) {
 	snap := New()
-	snap.SeedTCP("nl1", []config.TCPTarget{tcpTarget("dc4", "149.154.167.51:443")}, seedTime)
+	snap.SeedTCP("nl1", []config.TCPTarget{tcpTarget("dc4", "149.154.167.51:443")})
 
 	lbls := labels("config", "nl1", "target", "dc4")
 	if got := mustSample(t, gatherSamples(t, snap), "xray_tcp_up", lbls); got != 0 {
@@ -225,7 +249,7 @@ func TestExportUDPAndTCP(t *testing.T) {
 	snap.SeedTCP("nl1", []config.TCPTarget{
 		tcpTarget("z", "z.test:443"),
 		tcpTarget("m", "m.test:443"),
-	}, seedTime)
+	})
 
 	udpResult := probe.UDPResult{Up: true, Sent: 2, Replies: 2, Median: 10 * time.Millisecond}
 	snap.SetUDP("nl1", "a", "idle", udpResult, secondTime)
@@ -237,6 +261,9 @@ func TestExportUDPAndTCP(t *testing.T) {
 		t.Fatalf("Export has %d configs, want 1", len(exp.Configs))
 	}
 	cfg := exp.Configs[0]
+	if cfg.LoadUp != nil {
+		t.Errorf("LoadUp = %v before any loaded pass, want nil", *cfg.LoadUp)
+	}
 
 	var udpKeys []string
 	for _, row := range cfg.UDPs {
@@ -264,5 +291,11 @@ func TestExportUDPAndTCP(t *testing.T) {
 	}
 	if got := cfg.TCPs[0].Result; got != tcpResult {
 		t.Errorf("TCP m result = %+v, want the raw result %+v", got, tcpResult)
+	}
+
+	snap.SetUDPLoad("nl1", true, secondTime)
+	cfg = snap.Export().Configs[0]
+	if cfg.LoadUp == nil || !*cfg.LoadUp {
+		t.Errorf("LoadUp = %v after a live loaded pass, want true", cfg.LoadUp)
 	}
 }

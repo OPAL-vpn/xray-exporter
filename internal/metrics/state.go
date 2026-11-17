@@ -70,7 +70,6 @@ type tcpState struct {
 
 // udpLoadState is nil until the first loaded pass reports.
 type udpLoadState struct {
-	at time.Time
 	up bool
 }
 
