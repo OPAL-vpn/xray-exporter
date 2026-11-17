@@ -25,6 +25,47 @@ type Resolver struct {
 	DoTHost string `yaml:"dot_host"`
 }
 
+// UDP target kinds. A STUN binding burst is the only kind: it is the first
+// packet pattern of a Telegram call and answers on plain and TURN servers
+// alike.
+const udpKindSTUN = "stun"
+
+// The burst defaults and limits. count x spacing must fit the target's timeout
+// so a cycle deadline never cuts a burst mid-flight.
+const (
+	defaultUDPCount   = 20
+	maxUDPCount       = 1000
+	defaultUDPSpacing = 100 * time.Millisecond
+	minUDPSpacing     = time.Millisecond
+	maxUDPSpacing     = time.Second
+)
+
+// UDPTarget is one UDP quality probe destination: Count datagrams of Kind sent
+// Spacing apart. Count, SpacingDur and TimeoutDur are filled by validate.
+type UDPTarget struct {
+	Name    string `yaml:"name"`
+	Kind    string `yaml:"kind"`
+	Addr    string `yaml:"addr"`
+	Count   int    `yaml:"count,omitempty"`
+	Spacing string `yaml:"spacing,omitempty"`
+	Timeout string `yaml:"timeout,omitempty"`
+
+	SpacingDur time.Duration `yaml:"-"` // default 100ms
+	TimeoutDur time.Duration `yaml:"-"` // 0 means the sampler's probe timeout
+}
+
+// TCPTarget is one plain CONNECT through the tunnel.
+type TCPTarget struct {
+	Name string `yaml:"name"`
+	Addr string `yaml:"addr"`
+}
+
+// UDPUnderLoad adds the loaded pass: URL is a bulk download run beside every
+// burst, through the same tunnel.
+type UDPUnderLoad struct {
+	URL string `yaml:"url"`
+}
+
 // XrayConfigSource selects where full xray client configs come from. Interval is
 // the parsed Refresh; it stays zero for a directory source.
 type XrayConfigSource struct {
@@ -36,7 +77,8 @@ type XrayConfigSource struct {
 }
 
 // ExporterConfig is the parsed xray-exporter-config.yml. Nothing is defaulted
-// except the config source's refresh: a missing field is an error.
+// except the config source's refresh and a udp target's count and spacing: a
+// missing field is an error.
 type ExporterConfig struct {
 	DNSProbeDomain   string            `yaml:"dns_probe_domain"`
 	DNSUpstream      string            `yaml:"dns_upstream"`
@@ -44,6 +86,9 @@ type ExporterConfig struct {
 	Resolvers        []Resolver        `yaml:"dns_resolvers"`
 	XrayConfigSource *XrayConfigSource `yaml:"xray_config_source,omitempty"`
 	Reachability     *Reachability     `yaml:"reachability,omitempty"`
+	UDPTargets       []UDPTarget       `yaml:"udp_targets,omitempty"`
+	TCPTargets       []TCPTarget       `yaml:"tcp_targets,omitempty"`
+	UDPUnderLoad     *UDPUnderLoad     `yaml:"udp_under_load,omitempty"`
 }
 
 func Load(path string) (*ExporterConfig, error) {
@@ -107,6 +152,10 @@ func (c *ExporterConfig) validate() error {
 		}
 	}
 
+	if err := c.validateUDPAndTCP(); err != nil {
+		return err
+	}
+
 	if err := validateSource(c.XrayConfigSource); err != nil {
 		return err
 	}
@@ -117,6 +166,97 @@ func (c *ExporterConfig) validate() error {
 	}
 
 	return validateUpstream(c.DNSUpstream)
+}
+
+// validateUDPAndTCP checks the optional UDP and TCP target blocks and parses
+// each UDP target's durations. Names are unique across both blocks: both render
+// into one target label, so a shared name would collide into one series.
+func (c *ExporterConfig) validateUDPAndTCP() error {
+	seen := make(map[string]struct{}, len(c.UDPTargets)+len(c.TCPTargets))
+	for i := range c.UDPTargets {
+		if err := c.UDPTargets[i].validate(); err != nil {
+			return fmt.Errorf("udp_targets[%d]: %w", i, err)
+		}
+		name := c.UDPTargets[i].Name
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("udp_targets[%d]: duplicate name %q", i, name)
+		}
+		seen[name] = struct{}{}
+	}
+	for i := range c.TCPTargets {
+		if err := c.TCPTargets[i].validate(); err != nil {
+			return fmt.Errorf("tcp_targets[%d]: %w", i, err)
+		}
+		name := c.TCPTargets[i].Name
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("tcp_targets[%d]: duplicate name %q", i, name)
+		}
+		seen[name] = struct{}{}
+	}
+	if c.UDPUnderLoad == nil {
+		return nil
+	}
+	if err := c.UDPUnderLoad.validate(); err != nil {
+		return fmt.Errorf("udp_under_load: %w", err)
+	}
+	return nil
+}
+
+// validate checks one udp target and fills its defaults: count 20, spacing
+// 100ms. A zero count means the default: YAML cannot tell an absent count from
+// a written zero.
+func (t *UDPTarget) validate() error {
+	if strings.TrimSpace(t.Name) == "" {
+		return errors.New("name is required")
+	}
+	if t.Kind != udpKindSTUN {
+		return fmt.Errorf("kind must be %s", udpKindSTUN)
+	}
+	if err := validateAddr(t.Addr); err != nil {
+		return err
+	}
+	if t.Count == 0 {
+		t.Count = defaultUDPCount
+	}
+	if t.Count < 1 || t.Count > maxUDPCount {
+		return fmt.Errorf("count must be in 1-%d", maxUDPCount)
+	}
+	if t.Spacing == "" {
+		t.SpacingDur = defaultUDPSpacing
+	} else {
+		spacing, err := time.ParseDuration(t.Spacing)
+		if err != nil {
+			return fmt.Errorf("spacing: %w", err)
+		}
+		if spacing < minUDPSpacing || spacing > maxUDPSpacing {
+			return fmt.Errorf("spacing must be between %s and %s", minUDPSpacing, maxUDPSpacing)
+		}
+		t.SpacingDur = spacing
+	}
+	if t.Timeout == "" {
+		t.TimeoutDur = 0
+		return nil
+	}
+	timeout, err := time.ParseDuration(t.Timeout)
+	if err != nil {
+		return fmt.Errorf("timeout: %w", err)
+	}
+	if burst := time.Duration(t.Count) * t.SpacingDur; burst >= timeout {
+		return fmt.Errorf("timeout %s must be longer than count x spacing (%s)", timeout, burst)
+	}
+	t.TimeoutDur = timeout
+	return nil
+}
+
+func (t *TCPTarget) validate() error {
+	if strings.TrimSpace(t.Name) == "" {
+		return errors.New("name is required")
+	}
+	return validateAddr(t.Addr)
+}
+
+func (u *UDPUnderLoad) validate() error {
+	return validateAbsoluteHTTPURL(u.URL)
 }
 
 // validateSource checks the optional source block and parses its refresh. Every
@@ -146,7 +286,7 @@ func (s *XrayConfigSource) validate() error {
 		if s.Path != "" {
 			return errors.New("path and url are mutually exclusive")
 		}
-		if err := validateSourceURL(s.URL); err != nil {
+		if err := validateAbsoluteHTTPURL(s.URL); err != nil {
 			return err
 		}
 		if s.Refresh == "" {
@@ -167,9 +307,11 @@ func (s *XrayConfigSource) validate() error {
 	}
 }
 
-// validateSourceURL names the url field without echoing the value: the URL
-// embeds the subscription shortUuid and must not reach logs.
-func validateSourceURL(raw string) error {
+// validateAbsoluteHTTPURL names the url field without echoing the value: the
+// source URL embeds the subscription shortUuid and the under-load URL may
+// embed credentials, so neither value may reach logs. That is also why
+// url.Parse's own error is not wrapped.
+func validateAbsoluteHTTPURL(raw string) error {
 	if strings.TrimSpace(raw) == "" {
 		return errors.New("url is required")
 	}
