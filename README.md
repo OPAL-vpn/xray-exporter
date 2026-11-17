@@ -219,7 +219,10 @@ exporter's HTTP client does not follow redirects, so a redirecting link fails as
 a non-2xx. A loaded pass whose download moved zero bytes is discarded — the
 previous loaded sample and its timestamp stay, so staleness stays visible — and
 `xray_udp_load_up` goes to 0. That gauge is generator health, not tunnel health:
-the idle series never depend on the URL.
+the idle series never depend on the URL. A target whose burst is too short for
+the first GET to move bytes reports 0 for the same reason, so the burst must be
+long enough for the download to start — with the defaults (count 20, spacing
+100 ms) it always is.
 
 ### Reading the numbers
 

@@ -16,7 +16,8 @@ type stunTransactionID = [stun.TransactionIDSize]byte
 
 // UDPResult is the outcome of one STUN burst probe.
 type UDPResult struct {
-	// Up is true when at least one request was answered.
+	// Up is true when at least one request was answered and no relay read
+	// failed mid-burst.
 	Up        bool
 	Sent      int           // requests written through the relay
 	Replies   int           // unique transaction ids answered
@@ -126,10 +127,14 @@ func ProbeSTUN(ctx context.Context, socksAddr, target string, count int, spacing
 	}
 
 	result := UDPResult{Sent: sent, Replies: len(rtts), Reordered: reordered}
-	if len(rtts) == 0 {
-		// A broken relay read is only worth reporting when it left no sample
-		// at all; a burst with replies is usable whatever ended the reads.
+	if readErr != nil {
+		// A relay read that fails mid-burst leaves a truncated reply set: the
+		// loss ratio and the latencies would describe a partial denominator, so
+		// the burst is a failure, not a success with inflated loss.
 		result.Err = readErr
+		return result
+	}
+	if len(rtts) == 0 {
 		return result
 	}
 

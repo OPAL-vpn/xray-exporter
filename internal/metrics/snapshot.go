@@ -331,8 +331,9 @@ func (s *Snapshot) SetUDPLoad(config string, up bool, _ time.Time) {
 }
 
 // SetTCP records a connect, keeping the last successful connect time when it
-// fails.
-func (s *Snapshot) SetTCP(config, target string, r probe.TunnelTCPResult, at time.Time) {
+// fails. The timestamp is accepted for the uniform setter shape but not exposed:
+// the spec has no TCP timestamp family.
+func (s *Snapshot) SetTCP(config, target string, r probe.TunnelTCPResult, _ time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

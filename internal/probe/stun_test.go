@@ -137,6 +137,10 @@ func (s *testSTUNServer) serve() {
 type testSocksUDPForwarder struct {
 	listener net.Listener
 	udp      *net.UDPConn
+
+	mu         sync.Mutex
+	replies    int
+	breakAfter int // send a truncated datagram once this many replies were relayed; 0 never
 }
 
 // newTestSocksUDPForwarder starts the proxy and its forwarding socket.
@@ -165,6 +169,17 @@ func newTestSocksUDPForwarder(t *testing.T) *testSocksUDPForwarder {
 }
 
 func (f *testSocksUDPForwarder) Addr() string { return f.listener.Addr().String() }
+
+// breakAfterReplies makes the relay go bad once n replies were relayed: it
+// sends a truncated datagram, so the client's next read fails instead of timing
+// out. Closing the relay socket cannot stand in for this: the kernel reports the
+// dead port on the client's next write, and on the next read ahead of any reply
+// still queued, so it never reaches the collection loop.
+func (f *testSocksUDPForwarder) breakAfterReplies(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.breakAfter = n
+}
 
 func (f *testSocksUDPForwarder) serve() {
 	for {
@@ -255,6 +270,14 @@ func (f *testSocksUDPForwarder) relay(dst string, payload []byte, client *net.UD
 		return
 	}
 	_, _ = f.udp.WriteToUDP(frame, client)
+
+	f.mu.Lock()
+	f.replies++
+	broken := f.breakAfter > 0 && f.replies >= f.breakAfter
+	f.mu.Unlock()
+	if broken {
+		_, _ = f.udp.WriteToUDP([]byte{0x00, 0x00}, client)
+	}
 }
 
 // stunProbePath starts the forwarding proxy in front of server and returns the
@@ -412,6 +435,36 @@ func TestProbeSTUNStopsOnceAllAnswered(t *testing.T) {
 	}
 	if elapsed >= 2*time.Second {
 		t.Errorf("elapsed = %v, want well under the 5s timeout once every request is answered", elapsed)
+	}
+}
+
+// TestProbeSTUNRelayReadErrorDiscardsBurst pins that a relay read that fails
+// mid-collection does not publish the truncated burst: a partial reply set
+// would read as a success with inflated loss and a median over the replies that
+// happened to arrive before the relay broke. The relay breaks after the fourth
+// reply, so the failure lands in the collection loop with four replies already
+// counted.
+func TestProbeSTUNRelayReadErrorDiscardsBurst(t *testing.T) {
+	server := newTestSTUNServer(t)
+	proxy := newTestSocksUDPForwarder(t)
+	proxy.breakAfterReplies(4)
+
+	result := probe.ProbeSTUN(context.Background(), proxy.Addr(), server.Addr(), 5, 50*time.Millisecond, 2*time.Second)
+
+	if result.Err == nil {
+		t.Fatal("Err = nil, want the relay read failure")
+	}
+	if result.Up {
+		t.Error("Up = true, want false: a truncated burst is a failure")
+	}
+	if result.Sent != 5 {
+		t.Errorf("Sent = %d, want 5: the failure must land in collection, not in the send loop", result.Sent)
+	}
+	if result.Replies != 4 {
+		t.Errorf("Replies = %d, want 4: the replies relayed before the socket died", result.Replies)
+	}
+	if result.Median != 0 || result.Max != 0 || result.Jitter != 0 {
+		t.Errorf("latencies = %v/%v/%v, want zero: nothing is published from a truncated burst", result.Median, result.Max, result.Jitter)
 	}
 }
 

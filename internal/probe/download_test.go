@@ -35,8 +35,8 @@ func TestDownloadBytesCounts(t *testing.T) {
 }
 
 // TestDownloadBytesStatusError pins that a non-2xx is an error naming the
-// status, and that the bytes of the error body still count: the caller's
-// discard rule is about bytes moved, not about the status.
+// status and reports no load: an error body is not traffic the burst competed
+// with, so the caller must discard the loaded sample.
 func TestDownloadBytesStatusError(t *testing.T) {
 	body := []byte("no such file")
 
@@ -53,8 +53,30 @@ func TestDownloadBytesStatusError(t *testing.T) {
 	if !bytes.Contains([]byte(err.Error()), []byte("404")) {
 		t.Errorf("error = %q, want it to name the 404 status", err)
 	}
-	if n != int64(len(body)) {
-		t.Errorf("bytes = %d, want %d", n, len(body))
+	if n != 0 {
+		t.Errorf("bytes = %d, want 0: an error body is not load", n)
+	}
+}
+
+// TestDownloadBytesRedirectYieldsNoLoad pins the redirect case: the client does
+// not follow redirects, so a redirecting under-load URL arrives as a 302 with a
+// body. Counting that body would publish a loaded sample measured with no
+// competing traffic, which reads as "no congestion under load".
+func TestDownloadBytesRedirectYieldsNoLoad(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/file.bin", http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	n, err := probe.DownloadBytes(context.Background(), &redirectDialer{}, srv.URL)
+	if err == nil {
+		t.Fatalf("302: err = nil, want an error naming the status")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("302")) {
+		t.Errorf("error = %q, want it to name the 302 status", err)
+	}
+	if n != 0 {
+		t.Errorf("bytes = %d, want 0: a redirect body is not load", n)
 	}
 }
 
