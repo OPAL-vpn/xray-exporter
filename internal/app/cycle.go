@@ -66,9 +66,15 @@ func (a *application) logProbes(exp metrics.Export, jobs []sampler.Job) {
 			}
 		}
 		for _, udp := range cfg.UDPs {
+			if !udp.Measured {
+				continue
+			}
 			a.logProbe("udp", cfg.Name, "target", udp.Target, udp.Result.Up, udp.Result.Err, "load", udp.Load)
 		}
 		for _, tcp := range cfg.TCPs {
+			if !tcp.Measured {
+				continue
+			}
 			a.logProbe("tcp", cfg.Name, "target", tcp.Target, tcp.Result.Up, tcp.Result.Err)
 		}
 		if cfg.LoadUp != nil && !*cfg.LoadUp {

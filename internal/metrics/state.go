@@ -52,20 +52,24 @@ type udpKey struct {
 
 // udpState keeps the raw burst result for the report. The gauge pointers stay
 // nil until a successful probe, so the gauges are absent rather than zero.
+// measured separates a seeded row from one a probe reported: a zero result
+// alone cannot, because seeding writes one too.
 type udpState struct {
-	at     time.Time
-	result probe.UDPResult
-	loss   *float64
-	rtt    *float64
-	rttMax *float64
-	jitter *float64
+	at       time.Time
+	result   probe.UDPResult
+	measured bool
+	loss     *float64
+	rtt      *float64
+	rttMax   *float64
+	jitter   *float64
 }
 
 // tcpState keeps the raw connect result for the report; connect stays nil
-// until a successful connect.
+// until a successful connect. measured separates a seeded row from a probed one.
 type tcpState struct {
-	result  probe.TunnelTCPResult
-	connect *float64
+	result   probe.TunnelTCPResult
+	measured bool
+	connect  *float64
 }
 
 // udpLoadState is nil until the first loaded pass reports.

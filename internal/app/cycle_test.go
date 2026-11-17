@@ -74,8 +74,15 @@ func TestSeedDeclaresUDPAndTCPSeries(t *testing.T) {
 			a.seed(time.Now())
 			assertDeclared(t, a.snap, udp, tcp, tc.wantLoads)
 
+			a.snap.SetUDPLoad("nl1", true, time.Now())
+			if cfg := a.snap.Export().Configs[0]; cfg.LoadUp == nil || !*cfg.LoadUp {
+				t.Fatalf("LoadUp = %v before failClosed, want true", cfg.LoadUp)
+			}
+
 			// A fetch failure stops every config but must leave its series
-			// declared: an up=0 gauge is the visible result.
+			// declared: an up=0 gauge is the visible result. Dropping the config
+			// also clears the loaded pass's health, which described a run that no
+			// longer happens.
 			a.failClosed(time.Now(), errors.New("panel unavailable"))
 			assertDeclared(t, a.snap, udp, tcp, tc.wantLoads)
 		})
@@ -152,11 +159,14 @@ func TestLogProbesReportsUDPFailures(t *testing.T) {
 	exp := metrics.Export{Configs: []metrics.ConfigExport{{
 		Name: "nl1",
 		UDPs: []metrics.UDPExport{
-			{Target: "tg-stun-1", Load: metrics.LoadIdle, Result: probe.UDPResult{Err: errors.New("relay: timeout")}},
-			{Target: "tg-stun-1", Load: metrics.LoadLoaded, Result: probe.UDPResult{Up: true, Sent: 2, Replies: 2}},
+			{Target: "tg-stun-1", Load: metrics.LoadIdle, Measured: true, Result: probe.UDPResult{Err: errors.New("relay: timeout")}},
+			{Target: "tg-stun-1", Load: metrics.LoadLoaded, Measured: true, Result: probe.UDPResult{Up: true, Sent: 2, Replies: 2}},
+			// Seeded but never measured: no result to report a failure from.
+			{Target: "fresh", Load: metrics.LoadIdle},
 		},
 		TCPs: []metrics.TCPExport{
-			{Target: "mtproto-dc4", Result: probe.TunnelTCPResult{Err: errors.New("connect refused")}},
+			{Target: "mtproto-dc4", Measured: true, Result: probe.TunnelTCPResult{Err: errors.New("connect refused")}},
+			{Target: "fresh-tcp"},
 		},
 		LoadUp: &loadDown,
 	}}}
@@ -176,5 +186,10 @@ func TestLogProbesReportsUDPFailures(t *testing.T) {
 	}
 	if got := strings.Count(out, "level=WARN"); got != 3 {
 		t.Errorf("got %d WARN lines, want one per failure (3):\n%s", got, out)
+	}
+	for _, unmeasured := range []string{"target=fresh ", "target=fresh-tcp"} {
+		if strings.Contains(out, unmeasured) {
+			t.Errorf("an unmeasured row was logged as a failure (%q):\n%s", unmeasured, out)
+		}
 	}
 }

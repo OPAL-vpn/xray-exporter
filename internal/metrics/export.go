@@ -56,17 +56,22 @@ type TransportExport struct {
 	Result    probe.ResolverResult
 }
 
-// UDPExport keeps the raw burst result for one target and load pass.
+// UDPExport keeps the raw burst result for one target and load pass. Measured
+// is false for a row that was seeded but never probed, whose zero Result is not
+// a failure.
 type UDPExport struct {
-	Target string
-	Load   string
-	Result probe.UDPResult
+	Target   string
+	Load     string
+	Measured bool
+	Result   probe.UDPResult
 }
 
-// TCPExport keeps the raw tunnel connect result for one target.
+// TCPExport keeps the raw tunnel connect result for one target. Measured is
+// false for a seeded row that was never probed.
 type TCPExport struct {
-	Target string
-	Result probe.TunnelTCPResult
+	Target   string
+	Measured bool
+	Result   probe.TunnelTCPResult
 }
 
 // Export copies the snapshot under a read lock.
@@ -132,10 +137,12 @@ func exportConfig(name string, cfg *configState) ConfigExport {
 	}
 
 	for _, key := range sortedUDPKeys(cfg.udps) {
-		row.UDPs = append(row.UDPs, UDPExport{Target: key.target, Load: key.load, Result: cfg.udps[key].result})
+		state := cfg.udps[key]
+		row.UDPs = append(row.UDPs, UDPExport{Target: key.target, Load: key.load, Measured: state.measured, Result: state.result})
 	}
 	for _, target := range sortedKeys(cfg.tcps) {
-		row.TCPs = append(row.TCPs, TCPExport{Target: target, Result: cfg.tcps[target].result})
+		state := cfg.tcps[target]
+		row.TCPs = append(row.TCPs, TCPExport{Target: target, Measured: state.measured, Result: state.result})
 	}
 
 	return row

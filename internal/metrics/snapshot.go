@@ -125,7 +125,7 @@ func (s *Snapshot) SeedUDP(config string, targets []config.UDPTarget, loads []st
 	// a run that no longer happens.
 	underLoad := false
 	for _, load := range loads {
-		if load == "loaded" {
+		if load == LoadLoaded {
 			underLoad = true
 			break
 		}
@@ -301,6 +301,7 @@ func (s *Snapshot) SetUDP(config, target, load string, r probe.UDPResult, at tim
 	}
 	state.at = at
 	state.result = r
+	state.measured = true
 	if !r.Up {
 		return
 	}
@@ -344,6 +345,7 @@ func (s *Snapshot) SetTCP(config, target string, r probe.TunnelTCPResult, at tim
 		return
 	}
 	state.result = r
+	state.measured = true
 	if r.Up {
 		setLatency(&state.connect, r.Connect)
 	}

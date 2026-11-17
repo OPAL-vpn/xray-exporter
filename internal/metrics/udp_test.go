@@ -281,6 +281,12 @@ func TestExportUDPAndTCP(t *testing.T) {
 	if got := cfg.UDPs[0].Result; got != udpResult {
 		t.Errorf("UDP a/idle result = %+v, want the raw result %+v", got, udpResult)
 	}
+	for _, row := range cfg.UDPs {
+		want := row.Target == "a" && row.Load == "idle"
+		if row.Measured != want {
+			t.Errorf("UDP %s/%s Measured = %v, want %v", row.Target, row.Load, row.Measured, want)
+		}
+	}
 
 	var tcpNames []string
 	for _, row := range cfg.TCPs {
@@ -291,6 +297,12 @@ func TestExportUDPAndTCP(t *testing.T) {
 	}
 	if got := cfg.TCPs[0].Result; got != tcpResult {
 		t.Errorf("TCP m result = %+v, want the raw result %+v", got, tcpResult)
+	}
+	for _, row := range cfg.TCPs {
+		want := row.Target == "m"
+		if row.Measured != want {
+			t.Errorf("TCP %s Measured = %v, want %v", row.Target, row.Measured, want)
+		}
 	}
 
 	snap.SetUDPLoad("nl1", true, secondTime)
