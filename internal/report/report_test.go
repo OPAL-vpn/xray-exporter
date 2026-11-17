@@ -2,6 +2,8 @@ package report
 
 import (
 	"bytes"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -78,6 +80,20 @@ func row(t *testing.T, out, name string) string {
 	return ""
 }
 
+// rowFields returns the cells of the first line whose leading cells are want.
+func rowFields(t *testing.T, out string, want ...string) []string {
+	t.Helper()
+
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= len(want) && slices.Equal(fields[:len(want)], want) {
+			return fields
+		}
+	}
+	t.Fatalf("report has no row starting %v:\n%s", want, out)
+	return nil
+}
+
 func TestRender(t *testing.T) {
 	out := render(t, export())
 
@@ -140,6 +156,107 @@ func TestRenderFailedTarget(t *testing.T) {
 	}
 	if down[5] != "fail" {
 		t.Errorf("down.test dns cell = %q, want fail", down[5])
+	}
+}
+
+// qualityExport builds one config with an answered, a failed and an unmeasured
+// row in each of the UDP and TCP tables.
+func qualityExport() metrics.Export {
+	return metrics.Export{Configs: []metrics.ConfigExport{{
+		Name: "nl1",
+		UDPs: []metrics.UDPExport{
+			{
+				Target:   "u1",
+				Load:     "idle",
+				Measured: true,
+				Result: probe.UDPResult{
+					Up:        true,
+					Sent:      10,
+					Replies:   9,
+					Median:    12 * time.Millisecond,
+					Max:       20 * time.Millisecond,
+					Jitter:    3 * time.Millisecond,
+					Reordered: 2,
+				},
+			},
+			{
+				Target:   "u1",
+				Load:     "load",
+				Measured: true,
+				Result:   probe.UDPResult{Sent: 10, Err: errors.New("timeout")},
+			},
+			{Target: "u2", Load: "idle", Measured: false},
+		},
+		TCPs: []metrics.TCPExport{
+			{Target: "t1", Measured: true, Result: probe.TunnelTCPResult{Up: true, Connect: 20 * time.Millisecond}},
+			{Target: "t2", Measured: true, Result: probe.TunnelTCPResult{Err: errors.New("refused")}},
+			{Target: "t3", Measured: false},
+		},
+	}}}
+}
+
+func TestRenderUDPTable(t *testing.T) {
+	out := render(t, qualityExport())
+
+	// tabwriter pads columns to their widest cell, so the header is compared
+	// with its cells joined by single spaces.
+	header := strings.Join(rowFields(t, out, "udp", "target"), " ")
+	if want := "udp target load up loss rtt rtt max jitter reord"; header != want {
+		t.Errorf("udp header = %q, want %q", header, want)
+	}
+
+	ok := rowFields(t, out, "u1", "idle")
+	if want := []string{"u1", "idle", "up", "10.0%", "12.00ms", "20.00ms", "3.00ms", "2"}; !slices.Equal(ok, want) {
+		t.Errorf("u1 idle row = %v, want %v", ok, want)
+	}
+
+	failed := rowFields(t, out, "u1", "load")
+	if want := []string{"u1", "load", "fail", "-", "-", "-", "-", "-"}; !slices.Equal(failed, want) {
+		t.Errorf("u1 load row = %v, want a failure with no fabricated loss or latency", failed)
+	}
+
+	unmeasured := rowFields(t, out, "u2", "idle")
+	if want := []string{"u2", "idle", "-", "-", "-", "-", "-", "-"}; !slices.Equal(unmeasured, want) {
+		t.Errorf("u2 idle row = %v, want every measurement cell absent", unmeasured)
+	}
+}
+
+func TestRenderTCPTable(t *testing.T) {
+	out := render(t, qualityExport())
+
+	header := strings.Join(rowFields(t, out, "tcp", "target"), " ")
+	if want := "tcp target up connect"; header != want {
+		t.Errorf("tcp header = %q, want %q", header, want)
+	}
+
+	ok := rowFields(t, out, "t1")
+	if want := []string{"t1", "up", "20.00ms"}; !slices.Equal(ok, want) {
+		t.Errorf("t1 row = %v, want %v", ok, want)
+	}
+
+	failed := rowFields(t, out, "t2")
+	if want := []string{"t2", "fail", "-"}; !slices.Equal(failed, want) {
+		t.Errorf("t2 row = %v, want a failure with no fabricated connect time", failed)
+	}
+
+	unmeasured := rowFields(t, out, "t3")
+	if want := []string{"t3", "-", "-"}; !slices.Equal(unmeasured, want) {
+		t.Errorf("t3 row = %v, want every measurement cell absent", unmeasured)
+	}
+}
+
+func TestRenderSkipsEmptyQualityTables(t *testing.T) {
+	out := render(t, export())
+	for _, header := range []string{"udp target", "tcp target"} {
+		if strings.Contains(out, header) {
+			t.Errorf("report without quality targets renders the %q table:\n%s", header, out)
+		}
+	}
+
+	udpOnly := qualityExport()
+	udpOnly.Configs[0].TCPs = nil
+	if out := render(t, udpOnly); strings.Contains(out, "tcp target") {
+		t.Errorf("report without TCP targets renders the tcp table:\n%s", out)
 	}
 }
 
