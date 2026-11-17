@@ -140,6 +140,93 @@ func TestMeasureUDPRestartsFinishedDownload(t *testing.T) {
 	}
 }
 
+// TestMeasureUDPStopsOnEmptyDownload pins that a 2xx response with an empty body
+// does not turn the restart loop into a connection storm.
+func TestMeasureUDPStopsOnEmptyDownload(t *testing.T) {
+	snap := metrics.New()
+	snap.Seed("nl1", nil, nil, seedTime)
+	snap.SeedUDP("nl1", []config.UDPTarget{udpTarget("tg", "203.0.113.10:3478")}, []string{"idle", "loaded"}, seedTime)
+
+	p := (&fakeProbers{}).probers()
+	var downloads int32
+	p.Download = func(context.Context, probe.Dialer, string) (int64, error) {
+		atomic.AddInt32(&downloads, 1)
+		return 0, nil
+	}
+	p.STUN = func(ctx context.Context, _ string, _ string, _ int, _, _ time.Duration) probe.UDPResult {
+		// Long enough that a restarting loop would be called thousands of times.
+		sleep(ctx, 50*time.Millisecond)
+		return probe.UDPResult{Up: true, Sent: 20, Replies: 20}
+	}
+	s := New(snap, p, testOptions("example.com"))
+
+	s.Cycle(context.Background(), []Job{{Name: "nl1", SocksPort: 1080}}, Inputs{
+		UDPTargets:   []config.UDPTarget{udpTarget("tg", "203.0.113.10:3478")},
+		UnderLoadURL: underLoadURL,
+	})
+
+	if got := atomic.LoadInt32(&downloads); got != 1 {
+		t.Errorf("download called %d times, want 1: an empty body must not restart the GET", got)
+	}
+	values := snapshot(t, snap)
+	if got := mustValue(t, values, "xray_udp_up", "config", "nl1", "load", "loaded", "target", "tg"); got != 0 {
+		t.Errorf("xray_udp_up{load=loaded} = %v, want the seeded 0: no bytes moved", got)
+	}
+	if got := mustValue(t, values, "xray_udp_load_up", "config", "nl1"); got != 0 {
+		t.Errorf("xray_udp_load_up = %v, want 0", got)
+	}
+}
+
+// TestMeasureUDPSumsBytesAcrossDownloads pins that the byte count accumulates
+// across restarts instead of being overwritten by the last GET.
+func TestMeasureUDPSumsBytesAcrossDownloads(t *testing.T) {
+	snap := metrics.New()
+	snap.Seed("nl1", nil, nil, seedTime)
+	snap.SeedUDP("nl1", []config.UDPTarget{udpTarget("tg", "203.0.113.10:3478")}, []string{"idle", "loaded"}, seedTime)
+
+	p := (&fakeProbers{}).probers()
+	var downloads int32
+	second := make(chan struct{})
+	p.Download = func(context.Context, probe.Dialer, string) (int64, error) {
+		switch atomic.AddInt32(&downloads, 1) {
+		case 1:
+			return 4096, nil
+		case 2:
+			close(second)
+		}
+		return 0, nil
+	}
+	var stuns int32
+	p.STUN = func(context.Context, string, string, int, time.Duration, time.Duration) probe.UDPResult {
+		// The idle burst runs first; the loaded burst waits for the second GET,
+		// so the zero-byte decision sees both byte counts.
+		if atomic.AddInt32(&stuns, 1) == 2 {
+			select {
+			case <-second:
+			case <-time.After(2 * time.Second):
+			}
+		}
+		return probe.UDPResult{Up: true, Sent: 20, Replies: 20}
+	}
+	s := New(snap, p, testOptions("example.com"))
+
+	s.Cycle(context.Background(), []Job{{Name: "nl1", SocksPort: 1080}}, Inputs{
+		UDPTargets:   []config.UDPTarget{udpTarget("tg", "203.0.113.10:3478")},
+		UnderLoadURL: underLoadURL,
+	})
+
+	if got := atomic.LoadInt32(&downloads); got != 2 {
+		t.Fatalf("download called %d times, want 2", got)
+	}
+	values := snapshot(t, snap)
+	if got := mustValue(t, values, "xray_udp_up", "config", "nl1", "load", "loaded", "target", "tg"); got != 1 {
+		t.Errorf("xray_udp_up{load=loaded} = %v, want 1: the first GET moved bytes", got)
+	}
+	if got := mustValue(t, values, "xray_udp_load_up", "config", "nl1"); got != 1 {
+		t.Errorf("xray_udp_load_up = %v, want 1: the bytes of both GETs add up", got)
+	}
+}
+
 func TestMeasureUDPDiscardsLoadedPassOnDeadDownload(t *testing.T) {
 	snap := metrics.New()
 	snap.Seed("nl1", nil, nil, seedTime)
@@ -201,6 +288,49 @@ func TestMeasureUDPDeadlineCutDiscards(t *testing.T) {
 		if got := mustValue(t, values, "xray_udp_timestamp_seconds", "config", "nl1", "load", load, "target", "tg"); got != seedSeconds() {
 			t.Errorf("xray_udp_timestamp_seconds{load=%s} = %v, want the seeded %v", load, got, seedSeconds())
 		}
+	}
+	mustAbsent(t, values, "xray_udp_load_up", "config", "nl1")
+}
+
+// TestMeasureUDPDiscardsDeadlineCutLoadedPass pins that the deadline gate runs
+// before the zero-byte gate: a cut loaded burst must not report a dead
+// generator, and the idle burst it followed stays published.
+func TestMeasureUDPDiscardsDeadlineCutLoadedPass(t *testing.T) {
+	snap := metrics.New()
+	snap.Seed("nl1", nil, nil, seedTime)
+	snap.SeedUDP("nl1", []config.UDPTarget{udpTarget("tg", "203.0.113.10:3478")}, []string{"idle", "loaded"}, seedTime)
+
+	p := (&fakeProbers{}).probers()
+	var stuns int32
+	p.STUN = func(ctx context.Context, _ string, _ string, _ int, _, _ time.Duration) probe.UDPResult {
+		// Only the second burst, the loaded one, runs into the deadline.
+		if atomic.AddInt32(&stuns, 1) == 2 {
+			<-ctx.Done()
+			return probe.UDPResult{Err: ctx.Err()}
+		}
+		return probe.UDPResult{Up: true, Sent: 20, Replies: 20, Median: 30 * time.Millisecond}
+	}
+	opts := testOptions("example.com")
+	opts.Deadline = 100 * time.Millisecond
+	s := New(snap, p, opts)
+
+	s.Cycle(context.Background(), []Job{{Name: "nl1", SocksPort: 1080}}, Inputs{
+		UDPTargets:   []config.UDPTarget{udpTarget("tg", "203.0.113.10:3478")},
+		UnderLoadURL: underLoadURL,
+	})
+
+	values := snapshot(t, snap)
+	if got := mustValue(t, values, "xray_udp_up", "config", "nl1", "load", "idle", "target", "tg"); got != 1 {
+		t.Errorf("xray_udp_up{load=idle} = %v, want 1: the idle burst finished before the deadline", got)
+	}
+	if got := mustValue(t, values, "xray_udp_timestamp_seconds", "config", "nl1", "load", "idle", "target", "tg"); got <= seedSeconds() {
+		t.Errorf("xray_udp_timestamp_seconds{load=idle} = %v, want after the seed %v", got, seedSeconds())
+	}
+	if got := mustValue(t, values, "xray_udp_up", "config", "nl1", "load", "loaded", "target", "tg"); got != 0 {
+		t.Errorf("xray_udp_up{load=loaded} = %v, want the seeded 0: the deadline cut the burst", got)
+	}
+	if got := mustValue(t, values, "xray_udp_timestamp_seconds", "config", "nl1", "load", "loaded", "target", "tg"); got != seedSeconds() {
+		t.Errorf("xray_udp_timestamp_seconds{load=loaded} = %v, want the seeded %v", got, seedSeconds())
 	}
 	mustAbsent(t, values, "xray_udp_load_up", "config", "nl1")
 }

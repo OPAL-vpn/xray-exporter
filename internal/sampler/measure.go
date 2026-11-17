@@ -148,29 +148,39 @@ func (s *Sampler) measureUDP(ctx context.Context, job Job, t config.UDPTarget, l
 // startDownload keeps a bulk GET in flight for the whole burst: it restarts the
 // download whenever the file ends early, so the burst is never left unloaded.
 // Each loaded burst owns its download because the worker pool runs bursts in
-// parallel. It returns once the download is underway, so the burst starts with
-// the GET already issued; the returned stop cancels the transfer and waits for
-// the byte count.
+// parallel. It returns once the download goroutine is committed to its first
+// GET, so the burst starts with the transfer under way; the returned stop
+// cancels the transfer and waits for the byte count.
 func (s *Sampler) startDownload(ctx context.Context, job Job, url string, bytes *int64) (stop func()) {
 	dctx, cancel := context.WithCancel(ctx)
 	d := s.probers.Dialer(netutil.LoopbackAddr(job.SocksPort), s.opts.ProbeTimeout)
 
 	started := make(chan struct{})
+	var once sync.Once
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		close(started)
 		for dctx.Err() == nil {
+			once.Do(func() { close(started) })
 			n, err := s.probers.Download(dctx, d, url)
 			atomic.AddInt64(bytes, n)
 			if err != nil {
 				// A dead URL is not worth retrying inside the burst.
 				return
 			}
+			if n == 0 {
+				// An empty body would restart forever, one socks connection per
+				// iteration: stop instead of spinning.
+				return
+			}
 		}
 	}()
-	<-started
+
+	select {
+	case <-started:
+	case <-dctx.Done():
+	}
 
 	return func() {
 		cancel()
