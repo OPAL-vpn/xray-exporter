@@ -2309,7 +2309,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance) (xray_udp_up{instance=~\"$instance\",config=~\"$config\",target=~\"$udp_target\"})",
+          "expr": "sum by (instance) (xray_udp_up{instance=~\"$instance\",config=~\"$config\",target=~\"$udp_target\",load=\"idle\"})",
           "instant": true,
           "legendFormat": "{{instance}}",
           "range": false,

@@ -90,7 +90,7 @@ sets.
 | `WORKERS` | `8` | concurrent probes per config |
 | `PROBE_TIMEOUT` | `10s` | per HTTP/DNS/UDP/TCP probe; a UDP target's `timeout` overrides it |
 | `RESOLVER_TIMEOUT` | `5s` | per DoH/DoT probe |
-| `CONTROL_TIMEOUT` | `5s` | per direct [reachability](#reachability) probe, controls and entry connects |
+| `CONTROL_TIMEOUT` | `5s` | per direct reachability probe, controls and entry connects |
 | `XRAY_LOG_LEVEL` | `warning` | xray's own verbosity |
 | `XRAY_LOCATION_ASSET` | `/usr/local/share/xray` | geo asset directory |
 | `XRAY_LOG_FILE` | unset | mirror xray's stream into one file |
@@ -128,8 +128,8 @@ path already ends with it, and only the Xray JSON array form is accepted — a
 mihomo or plain-text subscription is a fetch failure. `path` and `url` are
 mutually exclusive, `refresh` is remnawave-only. The block replaces nothing else: `targets:`,
 `dns_resolvers:` and `dns_probe_domain` keep their meaning for both sources.
-/json`, a 20 s timeout and an 8 MiB body cap. No token and
-no cookie are sent.
+Fetches ask for `application/json`, time out after 20 s, cap the body at 8 MiB
+and send no token or cookie.
 
 ### The directory source is unchanged
 
@@ -152,7 +152,7 @@ udp_targets:
     addr: "203.0.113.10:3478"   # a Telegram call endpoint, or any STUN server
     count: 20                   # default
     spacing: 100ms              # default
-    timeout: 15s                # default PROBE_TIMEOUT
+    timeout: 15s                # default: PROBE_TIMEOUT (10s)
 tcp_targets:
   - name: mtproto-dc4
     addr: "203.0.113.20:443"
@@ -268,7 +268,7 @@ self-labelling.
 | `xray_exporter_config_fetch_timestamp_seconds` | — | last successful fetch; absent until then |
 | `xray_exporter_config_source_info` | type | 1, the configured source |
 | `xray_build_info` | version, go_version | 1 |
-| `xray_network_info` | as_name, country | 1, the network the host egresses from (ipinfo.io); [Reachability](#reachability) only |
+| `xray_network_info` | as_name, country | 1, the network the host egresses from (ipinfo.io); reachability only |
 | `xray_network_timestamp_seconds` | — | last successful egress lookup; absent until then |
 | `xray_control_up` | kind, name, class | direct probe succeeded |
 | `xray_control_seconds` | kind, name, class | last successful round trip |
@@ -288,7 +288,9 @@ Every expected series exists from the first scrape with `up` at 0. Latency
 series appear only after a success — a 0 would chart as infinitely fast and
 poison averages. A failed probe sets `up` to 0, moves the timestamp forward and
 keeps the last successful latency, so staleness is visible through the
-timestamp. Series disappear only with their config or target.
+timestamp. Series disappear only with their config or target. The one exception
+is `xray_udp_load_up`: it appears with the first loaded pass and disappears
+again when `udp_under_load` is removed.
 
 ## Dashboard
 

@@ -11,12 +11,18 @@ prompt is needed.
 narrowed down. `instance` is the Prometheus `instance` label from
 `deploy/prometheus.yml`, not something the exporter sets.
 
+`udp_target` is a second target list, taken from `xray_udp_up`: the UDP quality
+row uses it so UDP target names never appear in the HTTPS `target` list. `node`
+is single-select and drives the two Reachability detail timelines.
+
 | Variable | Source |
 |---|---|
 | `datasource` | any Prometheus datasource |
 | `instance` | `label_values(xray_config_running, instance)` |
 | `config` | `label_values(xray_config_running{instance=~"$instance"}, config)` |
 | `target` | `label_values(xray_probe_up{instance=~"$instance",config=~"$config"}, target)` |
+| `udp_target` | `label_values(xray_udp_up{instance=~"$instance",config=~"$config"}, target)` |
+| `node` | `label_values(xray_control_up, instance)` |
 
 ## Import via the UI
 
@@ -49,18 +55,18 @@ Prometheus lives elsewhere.
 
 | Row | Panels |
 |---|---|
-| Overview | configs up, cycle age, 15m probe success ratio |
-| Targets | target status timeline, latest per target table, TTFB, total request time, tunnel DNS lookup, HTTP status timeline, TLS verified timeline |
-| Resolvers | resolver availability timeline, resolver lookup latency |
-| Config | config health table, reload errors |
+| Overview | configs up, cycle age, config fetch age, 15m probe success ratio, 15m tunnel DNS up ratio |
+| Performance | TTFB, DNS lookup and total request averages per node, DNS share of TTFB, body transfer |
+| Reachability | egress network table, direct controls share up, entry TCP share reachable, per-node detail timelines for controls and entry TCP |
+| Targets | target success table, failing targets table and timeline, HTTP status timeline, TTFB, total request time, tunnel DNS lookup |
+| Resolvers | resolver success table, failing resolvers table, resolver latency |
+| Config | config health table |
+| UDP quality | UDP and TCP targets up, UDP loss ratio, UDP RTT, UDP RTT max, UDP jitter, TCP connect time |
 
 Latency series are absent until the first successful measurement, so those
 panels render empty rather than zero: `spanNulls` is off and every panel has a
 `noValue` placeholder. Nothing in the dashboard requires a built-in target or
 resolver list.
 
-`internal/metrics/dashboard_test.go` parses this file, reads every `expr` and
-every variable `query`/`definition`, and fails if it names a metric the exporter
-does not register — rename a metric in `internal/metrics` and the drift test
-tells you which panel to fix. It also fails if a panel expression ignores
-`$instance`, so a panel cannot silently stay unscoped.
+The UDP quality latency panels are in milliseconds: their queries scale the
+seconds-valued gauges by 1000, the unit `--once` reports quality probes in.

@@ -39,7 +39,7 @@ dns_resolvers:
 #     addr: "203.0.113.10:3478"   # a Telegram call endpoint, or any STUN server
 #     count: 20                   # default; 1..1000, 0 means the default
 #     spacing: 100ms              # default; 1ms..1s
-#     timeout: 15s                # default PROBE_TIMEOUT; must exceed count x spacing
+#     timeout: 15s                # default: PROBE_TIMEOUT (10s); must exceed count x spacing
 # tcp_targets:
 #   - name: mtproto-dc4
 #     addr: "203.0.113.20:443"
