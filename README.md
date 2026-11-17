@@ -123,15 +123,14 @@ path already ends with it, and only the Xray JSON array form is accepted — a
 mihomo or plain-text subscription is a fetch failure. `path` and `url` are
 mutually exclusive, `refresh` is remnawave-only. The block replaces nothing else: `targets:`,
 `dns_resolvers:` and `dns_probe_domain` keep their meaning for both sources.
-One request per interval — none when `refresh: 0` — with
+One request per interval — none on a timer when `refresh: 0` — with
 `Accept: application/json`, a 20 s timeout and an 8 MiB body cap. No token and
 no cookie are sent.
 
-A failed fetch is not fatal: the exporter keeps the last successfully fetched
-set running and retries on its next fetch, so a panel outage costs freshness,
-not measurement. `xray_exporter_config_fetch_errors_total` climbs and
-`xray_exporter_config_fetch_timestamp_seconds` stops advancing while the panel
-is unreachable.
+A panel outage costs freshness, not measurement: the last successfully fetched
+set keeps running and is retried at the next interval — or at the next `SIGHUP`
+when `refresh: 0`. The climbing `xray_exporter_config_fetch_errors_total` and
+the frozen `xray_exporter_config_fetch_timestamp_seconds` are how you see it.
 
 ### A failed fetch keeps the previous set
 
@@ -140,6 +139,8 @@ running, counts a fetch error and leaves the fetch timestamp where it was. A
 fetch that fails during a `SIGHUP` reload also counts a reload error, so
 `xray_exporter_config_reload_errors_total` climbs there too. A readable but
 empty set is still authoritative and stops every config.
+
+### The directory source
 
 The directory source is read at startup and on `SIGHUP`, never on a timer. A
 startup with an empty or unreadable directory is fatal. Its reload errors keep
