@@ -55,7 +55,7 @@ Prometheus lives elsewhere.
 
 | Row | Panels |
 |---|---|
-| Overview | configs up, cycle age, config fetch age, 15m probe success ratio, 15m tunnel DNS up ratio |
+| Overview | configs up, cycle age, config fetch age, 15m probe success ratio per node and averaged per config, 15m tunnel DNS up ratio |
 | Performance | TTFB, DNS lookup and total request averages per node, DNS share of TTFB, body transfer |
 | Reachability | egress network table, direct controls share up, entry TCP share reachable, per-node detail timelines for controls and entry TCP, paginated |
 | Targets | target success table, failing targets table and timeline, HTTP status timeline, TTFB, total request time, tunnel DNS lookup |
