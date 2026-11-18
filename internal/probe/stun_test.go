@@ -2,6 +2,7 @@ package probe_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -435,6 +436,66 @@ func TestProbeSTUNStopsOnceAllAnswered(t *testing.T) {
 	}
 	if elapsed >= 2*time.Second {
 		t.Errorf("elapsed = %v, want well under the 5s timeout once every request is answered", elapsed)
+	}
+}
+
+// TestProbeSTUNTimestampsRepliesWhileSending pins that a reply's RTT is taken
+// when the reply arrives, not when the whole paced burst has been sent. The
+// 250ms spacing dwarfs a loopback RTT, so a drain-after-send implementation
+// reports the pacing wait of the first requests as latency: its max would be
+// the full 1.75s send window and its median about 875ms.
+func TestProbeSTUNTimestampsRepliesWhileSending(t *testing.T) {
+	server := newTestSTUNServer(t)
+	socksAddr, target := stunProbePath(t, server)
+
+	const (
+		count   = 8
+		spacing = 250 * time.Millisecond
+	)
+	result := probe.ProbeSTUN(context.Background(), socksAddr, target, count, spacing, 6*time.Second)
+
+	if result.Err != nil {
+		t.Fatalf("ProbeSTUN: %v", result.Err)
+	}
+	if !result.Up {
+		t.Fatal("Up = false, want true")
+	}
+	if result.Replies != count {
+		t.Fatalf("Replies = %d, want %d", result.Replies, count)
+	}
+	if result.Max > 600*time.Millisecond {
+		t.Errorf("Max = %v, want < 600ms: the send spacing leaked into the RTT", result.Max)
+	}
+	if result.Median > 400*time.Millisecond {
+		t.Errorf("Median = %v, want < 400ms: the send spacing leaked into the RTT", result.Median)
+	}
+}
+
+// TestProbeSTUNCancellationStopsBurst pins that a cancelled context ends the
+// paced burst promptly with the requests sent so far, and joins the receive
+// goroutine instead of leaving it blocked on the relay.
+func TestProbeSTUNCancellationStopsBurst(t *testing.T) {
+	server := newTestSTUNServer(t)
+	socksAddr, target := stunProbePath(t, server)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	result := probe.ProbeSTUN(ctx, socksAddr, target, 10, 500*time.Millisecond, 10*time.Second)
+	elapsed := time.Since(start)
+
+	if !errors.Is(result.Err, context.Canceled) {
+		t.Fatalf("Err = %v, want context.Canceled", result.Err)
+	}
+	if result.Sent != 1 {
+		t.Errorf("Sent = %d, want 1: the cancel landed in the first pacing wait", result.Sent)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("elapsed = %v, want prompt return after the cancel", elapsed)
 	}
 }
 
